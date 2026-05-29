@@ -90,12 +90,16 @@ if search:
                 "title": title,
                 "link": link,
                 "breaking": is_breaking,
-                "keyword": kw
+                "keyword": kw,
+                "date": pub  # 날짜 정렬을 위해 날짜 데이터 추가
             })
 
     if not data:
         st.warning("뉴스 없음")
         st.stop()
+
+    # ⭐ [수정된 부분] 수집된 모든 기사를 날짜 기준(내림차순, 최신순)으로 정렬합니다.
+    data = sorted(data, key=lambda x: x["date"], reverse=True)
 
     breaking = [d for d in data if d["breaking"]]
     normal = [d for d in data if not d["breaking"]]
