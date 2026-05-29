@@ -19,7 +19,7 @@ with st.sidebar:
 
     keywords_input = st.text_area(
         "키워드 (한 줄에 하나씩)",
-        placeholder="삼성 에스원\nAI\n반도체"
+        placeholder="삼성\nAI\n반도체"
     )
 
     period = st.selectbox(
