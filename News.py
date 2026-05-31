@@ -9,7 +9,8 @@ from zoneinfo import ZoneInfo
 
 st.set_page_config(page_title="뉴스 모니터링 앱",layout="wide")
 
-st.title("📊 뉴스 모니터링 앱")
+# 수정사항 2 : 최상단 제목 추가
+st.title("📊 [미술관TS그룹] 뉴스 실시간 모니터링 앱")
 
 if "selected_keywords" not in st.session_state:
     st.session_state.selected_keywords = []
@@ -20,8 +21,6 @@ if "run_search" not in st.session_state:
 SAVED_KEYWORDS = ["삼성","에스원","집회","이재용","홍라희","이서현","리움미술관","호암미술관"]
 
 with st.sidebar:
-
-    st.header("설정")
 
     st.subheader("📌 저장 키워드")
 
@@ -46,6 +45,11 @@ with st.sidebar:
     search = st.button("🔍 검색", use_container_width=True)
 
     if search:
+
+        # 수정사항 1 : 직접 입력 검색 시 저장 키워드 초기화
+        if keywords_input.strip():
+            st.session_state.selected_keywords = []
+
         st.session_state.run_search = True
 
 manual_keywords = [k.strip()
