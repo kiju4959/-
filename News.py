@@ -5,8 +5,6 @@ import sqlite3
 import requests
 import os
 import re
-from bs4 import BeautifulSoup
-import google.generativeai as genai
 import urllib3
 
 from concurrent.futures import ThreadPoolExecutor
@@ -19,10 +17,6 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 TELEGRAM_TOKEN = "8606963961:AAH7AkdcYuj8a5GIrbnIABSI2XLPsqDFOEg"
 TELEGRAM_CHAT_ID = "590917314"
-GEMINI_API_KEY = "여기에_GEMINI_API_KEY를_입력하세요"
-
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash') 
 
 SAVED_KEYWORDS = [
     "삼성", "에스원", "집회", "테러", "이재용",
@@ -68,25 +62,6 @@ def get_sent_count():
     c = db_conn.cursor()
     c.execute("SELECT COUNT(*) FROM sent_news")
     return c.fetchone()[0]
-
-def fetch_and_summarize(url):
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        res = requests.get(url, headers=headers, timeout=10, verify=False) 
-        res.raise_for_status()
-        
-        soup = BeautifulSoup(res.text, 'html.parser')
-        paragraphs = soup.find_all('p')
-        body_text = " ".join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 20])
-        
-        if len(body_text) < 150:
-            return "본문이 너무 짧거나 보안 설정으로 인해 크롤링할 수 없는 기사입니다."
-            
-        prompt = f"다음 뉴스 기사 본문을 읽고 가장 중요한 핵심 내용만 정확히 3줄로 요약해줘. 각 줄은 '1. 2. 3.' 으로 번호를 매겨줘:\n\n{body_text[:3000]}"
-        response = model.generate_content(prompt)
-        return response.text.strip()
-    except:
-        return "요약 생성 실패 (크롤링 차단 또는 서버 오류)"
 
 st.set_page_config(page_title="인텔리전스 뉴스 모니터링", layout="wide")
 
