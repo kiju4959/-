@@ -136,7 +136,7 @@ with left:
             st.button(kw, use_container_width=True, on_click=trigger_saved_search, args=(kw,))
 
     st.write("---")
-    st.write("### 🎛️ 직관적인 맞춤 검색")
+    st.write("### 🎛️ 맞춤 검색")
     st.caption("메모장처럼 줄을 바꿔서 검색어를 입력하세요.")
     
     st.text_area(
