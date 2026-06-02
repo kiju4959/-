@@ -15,16 +15,11 @@ from email.utils import parsedate_to_datetime
 from zoneinfo import ZoneInfo
 from streamlit_autorefresh import st_autorefresh
 
-# SSL 인증서 경고 무시 (터미널에 빨간 경고창 뜨는 것 방지)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-# =========================
-# ⚙️ 설정 (API 키 및 기본값)
-# =========================
 
 TELEGRAM_TOKEN = "8606963961:AAH7AkdcYuj8a5GIrbnIABSI2XLPsqDFOEg"
 TELEGRAM_CHAT_ID = "590917314"
-GEMINI_API_KEY = "여기에_GEMINI_API_KEY를_입력하세요"  # 👈 발급받은 제미나이 API 키 입력
+GEMINI_API_KEY = "여기에_GEMINI_API_KEY를_입력하세요"
 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash') 
@@ -35,10 +30,6 @@ SAVED_KEYWORDS = [
 ]
 
 BREAK_KEYWORDS = ["속보", "긴급", "breaking", "Breaking"]
-
-# =========================
-# 🗄️ SQLite DB 로직
-# =========================
 
 @st.cache_resource
 def init_db():
@@ -78,14 +69,10 @@ def get_sent_count():
     c.execute("SELECT COUNT(*) FROM sent_news")
     return c.fetchone()[0]
 
-# =========================
-# 🤖 AI 크롤링 및 요약 로직
-# =========================
-
 def fetch_and_summarize(url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        res = requests.get(url, headers=headers, timeout=10, verify=False) # 크롤링 시에도 보안 충돌 방지
+        res = requests.get(url, headers=headers, timeout=10, verify=False) 
         res.raise_for_status()
         
         soup = BeautifulSoup(res.text, 'html.parser')
@@ -100,10 +87,6 @@ def fetch_and_summarize(url):
         return response.text.strip()
     except:
         return "요약 생성 실패 (크롤링 차단 또는 서버 오류)"
-
-# =========================
-# 페이지 설정 및 상태
-# =========================
 
 st.set_page_config(page_title="인텔리전스 뉴스 모니터링", layout="wide")
 
@@ -120,10 +103,6 @@ defaults = {
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
-
-# =========================
-# 🧠 줄바꿈 검색 및 에러 방지 콜백(Callback) 로직
-# =========================
 
 def generate_queries(queries_text, excl_text):
     queries = []
@@ -169,16 +148,11 @@ def remove_monitor_keyword(k):
 if st.session_state.monitoring:
     st_autorefresh(interval=60000, limit=None, key="monitor_refresh")
 
-# =========================
-# UI 구성
-# =========================
-
 st.markdown("<h1 style='text-align:center;'>📊 [미술관TS그룹] 뉴스 모니터링 대시보드</h1>", unsafe_allow_html=True)
 st.divider()
 
 left, center, right = st.columns([2, 5, 2])
 
-# 📌 LEFT: 검색 패널
 with left:
     st.subheader("🔎 검색 패널")
     cols = st.columns(2)
@@ -192,19 +166,18 @@ with left:
     
     st.text_area(
         "🟢 검색어 목록 (엔터로 줄바꿈)", 
-        placeholder="1. 삼성\n2. 에스원\n3. 삼성 집회\n4. 삼성 테러", 
+        placeholder="예)\n1. 삼성\n2. 에스원\n3. 삼성 집회\n4. 삼성 테러", 
         key="s_queries",
         height=150
     )
     
-    st.text_input("🔴 제외할 단어 (선택)", placeholder="예: 야구 스포츠", key="s_excl", on_change=trigger_manual_search)
+    st.text_input("🔴 제외할 단어 (선택)", placeholder="예) 야구 스포츠", key="s_excl", on_change=trigger_manual_search)
 
     period = st.selectbox("기간", ["1시간", "24시간", "48시간", "7일", "전체"])
     max_news = st.slider("최대 뉴스 (키워드당)", 10, 100, 30)
 
     st.button("🔍 위 조건으로 검색", use_container_width=True, on_click=trigger_manual_search)
 
-# 📌 RIGHT: 감시 패널
 with right:
     st.subheader("📡 감시 패널")
     c1, c2 = st.columns(2)
@@ -216,19 +189,17 @@ with right:
         if st.button("🔴 종료", use_container_width=True):
             st.session_state.monitoring = False
             
-    # [새로 추가된 기능] 테스트 발송 버튼
     if st.button("🔔 텔레그램 테스트 발송", use_container_width=True):
         test_msg = "🚨 테스트 알림: [시스템 점검]\n\n"
-        test_msg += "📰 제목: 텔레그램 봇 연동 테스트입니다.\n\n"
-        test_msg += "🤖 AI 3줄 요약:\n1. 모니터링 시스템이 정상 작동 중입니다.\n2. 봇 토큰과 채팅 ID가 올바르게 설정되었습니다.\n3. 앞으로 새 기사가 발생하면 이 형식으로 전송됩니다.\n\n"
-        test_msg += "🔗 링크: https://news.google.com"
+        test_msg += "📰 텔레그램 봇 연동 테스트입니다.\n\n"
+        test_msg += "🔗 https://news.google.com"
         
         try:
             res = requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
                 data={"chat_id": TELEGRAM_CHAT_ID, "text": test_msg},
                 timeout=10,
-                verify=False  # 👈 핵심: SSL 인증서 무시 옵션 추가
+                verify=False 
             )
             if res.status_code == 200:
                 st.toast("✅ 텔레그램으로 테스트 메시지를 성공적으로 전송했습니다!")
@@ -244,10 +215,10 @@ with right:
         st.text_area(
             "🟢 추가할 키워드 목록", 
             key="m_queries", 
-            placeholder="삼성\n속보 에스원\n삼성 집회",
+            placeholder="예)\n삼성\n속보 에스원\n삼성 집회",
             height=100
         )
-        st.text_input("🔴 제외할 단어", key="m_excl")
+        st.text_input("🔴 제외할 단어", placeholder="예) 야구 스포츠 라이온즈", key="m_excl")
         
         st.button("목록에 일괄 추가", on_click=add_monitor_keyword)
 
@@ -255,7 +226,14 @@ with right:
     for i, k in enumerate(st.session_state.monitor_keywords):
         c1, c2 = st.columns([4, 1])
         with c1:
-            st.write(f"**{k}**")
+            if "-" in k:
+                parts = k.split("-")
+                main_kw = parts[0].strip()
+                excl_kws = ", ".join([p.strip() for p in parts[1:]])
+                st.markdown(f"**{main_kw}** *(🚫 제외: {excl_kws})*")
+            else:
+                st.write(f"**{k}**")
+                
         with c2:
             st.button("❌", key=f"rm_{i}", on_click=remove_monitor_keyword, args=(k,))
 
@@ -267,10 +245,6 @@ with right:
         time_str = log[0].split(" ")[1][:5]
         st.caption(f"{time_str} | {log[1]}")
         st.write(f"- {log[2][:20]}...")
-
-# =========================
-# RSS 데이터 수집 및 처리
-# =========================
 
 now = datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
 period_map = {
@@ -317,10 +291,6 @@ def process_news(keywords):
             })
     return result
 
-# =========================
-# 감시 로직 
-# =========================
-
 if st.session_state.monitoring and st.session_state.monitor_keywords and st.session_state.monitor_start_time:
     monitor_data = process_news(st.session_state.monitor_keywords)
     start = st.session_state.monitor_start_time
@@ -329,30 +299,24 @@ if st.session_state.monitoring and st.session_state.monitor_keywords and st.sess
         if n["date"] <= start: continue
 
         if not is_news_sent(n["link"]):
-            summary = fetch_and_summarize(n["link"])
             
             alert_icon = "🚨" if n["breaking"] else "🔔"
             tg_msg = f"{alert_icon} 새 기사 감지: [{n['keyword']}]\n\n"
-            tg_msg += f"📰 제목: {n['title']}\n\n"
-            tg_msg += f"🤖 AI 3줄 요약:\n{summary}\n\n"
-            tg_msg += f"🔗 링크: {n['link']}"
+            tg_msg += f"📰 {n['title']}\n\n"
+            tg_msg += f"🔗 {n['link']}"
             
             try:
                 requests.post(
                     f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
                     data={"chat_id": TELEGRAM_CHAT_ID, "text": tg_msg},
                     timeout=10,
-                    verify=False  # 👈 실제 발송 시에도 SSL 인증서 무시 옵션 추가
+                    verify=False  
                 )
             except:
                 pass
 
             save_sent_news(n["link"], n["title"], n["keyword"])
             save_monitor_log(n["keyword"], n["title"], n["link"])
-
-# =========================
-# 📌 CENTER: 뉴스 결과 출력
-# =========================
 
 with center:
     if st.session_state.run_search and st.session_state.active_search_keywords:
