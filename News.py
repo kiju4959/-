@@ -213,8 +213,15 @@ with right:
             st.button("❌", key=f"rm_{i}", on_click=remove_monitor_keyword, args=(k,))
 
     st.divider()
-    st.write("🟢 AI 감시중 (60초 갱신)" if st.session_state.monitoring else "🔴 중지됨")
-    st.write(f"DB 누적 전송: {get_sent_count()}건")
+    
+    # 🟢 [개선된 부분] 감시 상태 및 최근 갱신 시간 표시
+    if st.session_state.monitoring:
+        current_refresh_time = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")
+        st.success(f"🟢 **AI 감시중** (60초 갱신) \n\n ⏱️ 최근 갱신 시간: `{current_refresh_time}`")
+    else:
+        st.error("🔴 **감시 중지됨**")
+        
+    st.write(f"**DB 누적 전송:** {get_sent_count()}건")
 
     for log in get_recent_logs(5):
         time_str = log[0].split(" ")[1][:5]
