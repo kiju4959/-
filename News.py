@@ -15,6 +15,8 @@ from streamlit_autorefresh import st_autorefresh
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+st.set_page_config(page_title="인텔리전스 뉴스 모니터링", layout="wide")
+
 TELEGRAM_TOKEN = "8606963961:AAH7AkdcYuj8a5GIrbnIABSI2XLPsqDFOEg"
 TELEGRAM_CHAT_ID = "590917314"
 
@@ -62,8 +64,6 @@ def get_sent_count():
     c = db_conn.cursor()
     c.execute("SELECT COUNT(*) FROM sent_news")
     return c.fetchone()[0]
-
-st.set_page_config(page_title="인텔리전스 뉴스 모니터링", layout="wide")
 
 defaults = {
     "active_search_keywords": [],
@@ -122,6 +122,8 @@ def remove_monitor_keyword(k):
 
 if st.session_state.monitoring:
     st_autorefresh(interval=60000, limit=None, key="monitor_refresh")
+    # 1분 (60초): 60 * 1000 = 60000
+    # 5분 (300초): 300 * 1000 = 300000
 
 st.markdown("<h1 style='text-align:center;'>📊 [미술관TS그룹] 뉴스 모니터링 대시보드</h1>", unsafe_allow_html=True)
 st.divider()
