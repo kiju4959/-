@@ -1,4 +1,5 @@
 streamlit
+starlette==0.37.2
 feedparser
 requests
 beautifulsoup4
