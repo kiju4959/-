@@ -275,6 +275,27 @@ def process_news(keywords):
             })
     return result
 
+import difflib
+
+def clean_title(title):
+    title = re.sub(r'\[.*?\]|\(.*\)', '', title)
+    title = re.split(r'[-|\||ⓒ]', title)[0]
+    return title.strip()
+
+def get_recent_sent_titles(keyword, limit=30):
+    c = db_conn.cursor()
+    c.execute("SELECT title FROM sent_news WHERE keyword = ? ORDER BY sent_at DESC LIMIT ?", (keyword, limit))
+    return [row[0] for row in c.fetchall()]
+
+def is_similar_to_recent(new_title, recent_titles, threshold=0.6):
+    cleaned_new = clean_title(new_title)
+    for old_title in recent_titles:
+        cleaned_old = clean_title(old_title)
+        ratio = difflib.SequenceMatcher(None, cleaned_new, cleaned_old).ratio()
+        if ratio >= threshold:
+            return True
+    return False
+
 if st.session_state.monitoring and st.session_state.monitor_keywords and st.session_state.monitor_start_time:
     monitor_data = process_news(st.session_state.monitor_keywords)
     start = st.session_state.monitor_start_time
@@ -284,6 +305,12 @@ if st.session_state.monitoring and st.session_state.monitor_keywords and st.sess
 
         if not is_news_sent(n["link"]):
             
+            recent_titles = get_recent_sent_titles(n["keyword"])
+            
+            if is_similar_to_recent(n["title"], recent_titles, threshold=0.6):
+                save_sent_news(n["link"], n["title"], n["keyword"])
+                continue
+
             alert_icon = "🚨" if n["breaking"] else "🔔"
             tg_msg = f"{alert_icon} 새 기사 감지: [{n['keyword']}]\n\n"
             tg_msg += f"📰 {n['title']}\n\n"
