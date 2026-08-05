@@ -15,7 +15,7 @@ from streamlit_autorefresh import st_autorefresh
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-st.set_page_config(page_title="인텔리전스 뉴스 모니터링", layout="wide")
+st.set_page_config(page_title="미술관TS그룹 뉴스 모니터링", layout="wide")
 
 TELEGRAM_TOKEN = "8606963961:AAH7AkdcYuj8a5GIrbnIABSI2XLPsqDFOEg"
 TELEGRAM_CHAT_ID = "590917314"
@@ -300,6 +300,8 @@ if st.session_state.monitoring and st.session_state.monitor_keywords and st.sess
     monitor_data = process_news(st.session_state.monitor_keywords)
     start = st.session_state.monitor_start_time
 
+    new_articles_to_send = []
+
     for n in monitor_data:
         if n["date"] <= start: continue
 
@@ -311,23 +313,30 @@ if st.session_state.monitoring and st.session_state.monitor_keywords and st.sess
                 save_sent_news(n["link"], n["title"], n["keyword"])
                 continue
 
-            alert_icon = "🚨" if n["breaking"] else "🔔"
-            tg_msg = f"{alert_icon} 새 기사 감지: [{n['keyword']}]\n\n"
-            tg_msg += f"📰 {n['title']}\n\n"
-            tg_msg += f"🔗 {n['link']}"
+            new_articles_to_send.append(n)
             
-            try:
-                requests.post(
-                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                    data={"chat_id": TELEGRAM_CHAT_ID, "text": tg_msg},
-                    timeout=10,
-                    verify=False  
-                )
-            except:
-                pass
-
             save_sent_news(n["link"], n["title"], n["keyword"])
             save_monitor_log(n["keyword"], n["title"], n["link"])
+
+    if new_articles_to_send:
+        breaking_count = sum(1 for n in new_articles_to_send if n["breaking"])
+        alert_icon = "🚨" if breaking_count > 0 else "🔔"
+        
+        tg_msg = f"{alert_icon} 새 기사 감지 ({len(new_articles_to_send)}건)\n\n"
+        
+        for n in new_articles_to_send:
+            icon = "🚨" if n["breaking"] else "📰"
+            tg_msg += f"[{n['keyword']}] {icon} {n['title']}\n🔗 {n['link']}\n\n"
+        
+        try:
+            requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                data={"chat_id": TELEGRAM_CHAT_ID, "text": tg_msg[:4000]},
+                timeout=10,
+                verify=False  
+            )
+        except:
+            pass
 
 with center:
     if st.session_state.run_search and st.session_state.active_search_keywords:
