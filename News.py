@@ -6,6 +6,7 @@ import requests
 import os
 import re
 import urllib3
+import difflib
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -65,6 +66,25 @@ def get_sent_count():
     c.execute("SELECT COUNT(*) FROM sent_news")
     return c.fetchone()[0]
 
+def clean_title(title):
+    title = re.sub(r'\[.*?\]|\(.*\)', '', title)
+    title = re.split(r'[-|\||ⓒ]', title)[0]
+    return title.strip()
+
+def get_recent_sent_titles(keyword, limit=30):
+    c = db_conn.cursor()
+    c.execute("SELECT title FROM sent_news WHERE keyword = ? ORDER BY sent_at DESC LIMIT ?", (keyword, limit))
+    return [row[0] for row in c.fetchall()]
+
+def is_similar_to_recent(new_title, recent_titles, threshold=0.6):
+    cleaned_new = clean_title(new_title)
+    for old_title in recent_titles:
+        cleaned_old = clean_title(old_title)
+        ratio = difflib.SequenceMatcher(None, cleaned_new, cleaned_old).ratio()
+        if ratio >= threshold:
+            return True
+    return False
+
 defaults = {
     "active_search_keywords": [],
     "run_search": False,
@@ -120,13 +140,51 @@ def add_monitor_keyword():
 def remove_monitor_keyword(k):
     st.session_state.monitor_keywords.remove(k)
 
+@st.cache_data(ttl=300)
+def fetch_feed(raw_keyword):
+    url = (
+        "https://news.google.com/rss/search?q="
+        f"{urllib.parse.quote(raw_keyword)}"
+        "&hl=ko&gl=KR&ceid=KR:ko"
+    )
+    return raw_keyword, feedparser.parse(url)
+
+def process_news(keywords, limit_time=None):
+    result = []
+    if not keywords: return result
+
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        feeds = ex.map(fetch_feed, keywords)
+
+    for kw, feed in feeds:
+        seen = set()
+        for n in feed.entries:
+            title = n.title
+            link = n.link
+            if title in seen: continue
+            seen.add(title)
+
+            try:
+                pub = parsedate_to_datetime(n.published)
+                pub = pub.astimezone(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
+            except: continue
+
+            if limit_time and pub < limit_time: continue
+
+            breaking = any(b.lower() in title.lower() for b in BREAK_KEYWORDS)
+            result.append({
+                "title": title, "link": link, "keyword": kw,
+                "date": pub, "breaking": breaking
+            })
+    return result
+
 if st.session_state.monitoring:
     st_autorefresh(interval=60000, limit=None, key="monitor_refresh")
-    # 1분 (60초): 60 * 1000 = 60000
-    # 5분 (300초): 300 * 1000 = 300000
 
 st.markdown("<h1 style='text-align:center;'>📊 [미술관TS그룹] 뉴스 모니터링 대시보드</h1>", unsafe_allow_html=True)
 st.divider()
+
+now = datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
 
 left, center, right = st.columns([2, 5, 2])
 
@@ -154,6 +212,12 @@ with left:
     max_news = st.slider("최대 뉴스 (키워드당)", 10, 100, 30)
 
     st.button("🔍 위 조건으로 검색", use_container_width=True, on_click=trigger_manual_search)
+    
+    period_map = {
+        "1시간": timedelta(hours=1), "24시간": timedelta(hours=24),
+        "48시간": timedelta(hours=48), "7일": timedelta(days=7),
+    }
+    search_limit = now - period_map.get(period, timedelta(days=9999)) if period != "전체" else None
 
 with right:
     st.subheader("📡 감시 패널")
@@ -167,10 +231,7 @@ with right:
             st.session_state.monitoring = False
             
     if st.button("🔔 텔레그램 테스트 발송", use_container_width=True):
-        test_msg = "🚨 테스트 알림: [시스템 점검]\n\n"
-        test_msg += "📰 텔레그램 봇 연동 테스트입니다.\n\n"
-        test_msg += "🔗 https://news.google.com"
-        
+        test_msg = "🚨 테스트 알림: [시스템 점검]\n\n📰 텔레그램 봇 연동 테스트입니다.\n\n🔗 https://news.google.com"
         try:
             res = requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
@@ -216,7 +277,6 @@ with right:
 
     st.divider()
     
-    # 🟢 [개선된 부분] 감시 상태 및 최근 갱신 시간 표시
     if st.session_state.monitoring:
         current_refresh_time = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")
         st.success(f"🟢 **AI 감시중** (60초 갱신) \n\n ⏱️ 최근 갱신 시간: `{current_refresh_time}`")
@@ -230,113 +290,52 @@ with right:
         st.caption(f"{time_str} | {log[1]}")
         st.write(f"- {log[2][:20]}...")
 
-now = datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
-period_map = {
-    "1시간": timedelta(hours=1), "24시간": timedelta(hours=24),
-    "48시간": timedelta(hours=48), "7일": timedelta(days=7),
-}
-limit = now - period_map.get(period, timedelta(days=9999)) if period != "전체" else None
+    if st.session_state.monitoring and st.session_state.monitor_keywords and st.session_state.monitor_start_time:
+        monitor_data = process_news(st.session_state.monitor_keywords)
+        start = st.session_state.monitor_start_time
 
-@st.cache_data(ttl=300)
-def fetch_feed(raw_keyword):
-    url = (
-        "https://news.google.com/rss/search?q="
-        f"{urllib.parse.quote(raw_keyword)}"
-        "&hl=ko&gl=KR&ceid=KR:ko"
-    )
-    return raw_keyword, feedparser.parse(url)
+        new_articles_to_send = []
+        recent_titles_cache = {}
 
-def process_news(keywords):
-    result = []
-    if not keywords: return result
+        for n in monitor_data:
+            if n["date"] <= start: continue
 
-    with ThreadPoolExecutor(max_workers=5) as ex:
-        feeds = ex.map(fetch_feed, keywords)
+            if not is_news_sent(n["link"]):
+                kw = n["keyword"]
+                if kw not in recent_titles_cache:
+                    recent_titles_cache[kw] = get_recent_sent_titles(kw)
 
-    for kw, feed in feeds:
-        seen = set()
-        for n in feed.entries:
-            title = n.title
-            link = n.link
-            if title in seen: continue
-            seen.add(title)
+                recent_titles = recent_titles_cache[kw]
+                
+                if is_similar_to_recent(n["title"], recent_titles, threshold=0.6):
+                    save_sent_news(n["link"], n["title"], n["keyword"])
+                    continue
 
-            try:
-                pub = parsedate_to_datetime(n.published)
-                pub = pub.astimezone(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
-            except: continue
-
-            if limit and pub < limit: continue
-
-            breaking = any(b.lower() in title.lower() for b in BREAK_KEYWORDS)
-            result.append({
-                "title": title, "link": link, "keyword": kw,
-                "date": pub, "breaking": breaking
-            })
-    return result
-
-import difflib
-
-def clean_title(title):
-    title = re.sub(r'\[.*?\]|\(.*\)', '', title)
-    title = re.split(r'[-|\||ⓒ]', title)[0]
-    return title.strip()
-
-def get_recent_sent_titles(keyword, limit=30):
-    c = db_conn.cursor()
-    c.execute("SELECT title FROM sent_news WHERE keyword = ? ORDER BY sent_at DESC LIMIT ?", (keyword, limit))
-    return [row[0] for row in c.fetchall()]
-
-def is_similar_to_recent(new_title, recent_titles, threshold=0.6):
-    cleaned_new = clean_title(new_title)
-    for old_title in recent_titles:
-        cleaned_old = clean_title(old_title)
-        ratio = difflib.SequenceMatcher(None, cleaned_new, cleaned_old).ratio()
-        if ratio >= threshold:
-            return True
-    return False
-
-if st.session_state.monitoring and st.session_state.monitor_keywords and st.session_state.monitor_start_time:
-    monitor_data = process_news(st.session_state.monitor_keywords)
-    start = st.session_state.monitor_start_time
-
-    new_articles_to_send = []
-
-    for n in monitor_data:
-        if n["date"] <= start: continue
-
-        if not is_news_sent(n["link"]):
-            
-            recent_titles = get_recent_sent_titles(n["keyword"])
-            
-            if is_similar_to_recent(n["title"], recent_titles, threshold=0.6):
+                new_articles_to_send.append(n)
+                recent_titles_cache[kw].insert(0, n["title"]) 
+                
                 save_sent_news(n["link"], n["title"], n["keyword"])
-                continue
+                save_monitor_log(n["keyword"], n["title"], n["link"])
 
-            new_articles_to_send.append(n)
+        if new_articles_to_send:
+            breaking_count = sum(1 for n in new_articles_to_send if n["breaking"])
+            alert_icon = "🚨" if breaking_count > 0 else "🔔"
             
-            save_sent_news(n["link"], n["title"], n["keyword"])
-            save_monitor_log(n["keyword"], n["title"], n["link"])
-
-    if new_articles_to_send:
-        breaking_count = sum(1 for n in new_articles_to_send if n["breaking"])
-        alert_icon = "🚨" if breaking_count > 0 else "🔔"
-        
-        tg_msg = f"{alert_icon} 새 기사 감지 ({len(new_articles_to_send)}건)\n\n"
-        
-        for n in new_articles_to_send:
-            icon = "🚨" if n["breaking"] else "📰"
-            tg_msg += f"[{n['keyword']}] {icon} {n['title']}\n🔗 {n['link']}\n\n"
-        
-        try:
-            requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                data={"chat_id": TELEGRAM_CHAT_ID, "text": tg_msg[:4000]},
-                timeout=10,
-                verify=False  
-            )
-        except:
-            pass
+            tg_msg = f"{alert_icon} 새 기사 감지 ({len(new_articles_to_send)}건)\n\n"
+            
+            for n in new_articles_to_send:
+                icon = "🚨" if n["breaking"] else "📰"
+                tg_msg += f"[{n['keyword']}] {icon} {n['title']}\n🔗 {n['link']}\n\n"
+            
+            try:
+                requests.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                    data={"chat_id": TELEGRAM_CHAT_ID, "text": tg_msg[:4000]},
+                    timeout=10,
+                    verify=False  
+                )
+            except:
+                pass
 
 with center:
     if st.session_state.run_search and st.session_state.active_search_keywords:
@@ -347,7 +346,7 @@ with center:
         breaking_news = []
         seen_breaking_links = set()
         
-        raw_data = process_news(st.session_state.active_search_keywords)
+        raw_data = process_news(st.session_state.active_search_keywords, search_limit)
         
         for d in raw_data:
             kw = d["keyword"]
