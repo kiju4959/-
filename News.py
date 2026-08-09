@@ -140,7 +140,7 @@ def add_monitor_keyword():
 def remove_monitor_keyword(k):
     st.session_state.monitor_keywords.remove(k)
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)
 def fetch_feed(raw_keyword):
     url = (
         "https://news.google.com/rss/search?q="
@@ -179,7 +179,7 @@ def process_news(keywords, limit_time=None):
     return result
 
 if st.session_state.monitoring:
-    st_autorefresh(interval=60000, limit=None, key="monitor_refresh")
+    refresh_count = st_autorefresh(interval=60000, limit=None, key="monitor_refresh")
 
 st.markdown("<h1 style='text-align:center;'>📊 [미술관TS그룹] 뉴스 모니터링 대시보드</h1>", unsafe_allow_html=True)
 st.divider()
