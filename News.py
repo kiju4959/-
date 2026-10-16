@@ -36,6 +36,44 @@ st.set_page_config(page_title="미술관TS그룹 뉴스 모니터링", layout="w
 
 
 
+# 입력창 테두리 및 배경색 강조 스타일 (HTML 태그 깨짐 방지를 위해 chr(60), chr(62) 사용)
+
+_lt, _gt = chr(60), chr(62)
+
+st.markdown(
+
+    f"""{_lt}style{_gt}
+
+    div[data-baseweb="input"] {_gt} div,
+
+    div[data-baseweb="textarea"] {_gt} div {{
+
+        background-color: rgba(128, 128, 128, 0.08) !important;
+
+        border: 1.5px solid rgba(128, 128, 128, 0.45) !important;
+
+        border-radius: 6px !important;
+
+    }}
+
+    div[data-baseweb="input"]:focus-within {_gt} div,
+
+    div[data-baseweb="textarea"]:focus-within {_gt} div {{
+
+        border: 2px solid #2b6cb0 !important;
+
+        background-color: rgba(43, 108, 176, 0.05) !important;
+
+    }}
+
+    {_lt}/style{_gt}""",
+
+    unsafe_allow_html=True
+
+)
+
+
+
 TELEGRAM_TOKEN = "8606963961:AAH7AkdcYuj8a5GIrbnIABSI2XLPsqDFOEg"
 
 TELEGRAM_CHAT_ID = "590917314"
@@ -48,7 +86,7 @@ BREAK_KEYWORDS = ["속보", "긴급", "breaking", "Breaking"]
 
 # ---------------------------------------------------------
 
-# DB 초기화 및 영구 저장 함수
+# DB 초기화 및 영구 저장 함수 (감시 상태까지 DB에 영구 저장)
 
 # ---------------------------------------------------------
 
@@ -76,6 +114,14 @@ def init_db():
 
     )''')
 
+    c.execute('''CREATE TABLE IF NOT EXISTS app_state (
+
+        key TEXT PRIMARY KEY,
+
+        value TEXT
+
+    )''')
+
     conn.commit()
 
     return conn
@@ -83,6 +129,28 @@ def init_db():
 
 
 db_conn = init_db()
+
+
+
+def get_app_state(key, default=""):
+
+    c = db_conn.cursor()
+
+    c.execute("SELECT value FROM app_state WHERE key = ?", (key,))
+
+    row = c.fetchone()
+
+    return row[0] if row else default
+
+
+
+def set_app_state(key, value):
+
+    c = db_conn.cursor()
+
+    c.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)", (key, str(value)))
+
+    db_conn.commit()
 
 
 
@@ -220,9 +288,27 @@ def is_similar_to_recent(new_title, recent_titles, threshold=0.6):
 
 # ---------------------------------------------------------
 
-# 세션 상태(Session State) 초기화
+# 세션 상태(Session State) 초기화 및 DB 감시 상태 복원
 
 # ---------------------------------------------------------
+
+saved_mon = get_app_state("monitoring", "0") == "1"
+
+saved_start_str = get_app_state("monitor_start_time", "")
+
+saved_start_dt = None
+
+if saved_start_str:
+
+    try:
+
+        saved_start_dt = datetime.strptime(saved_start_str, "%Y-%m-%d %H:%M:%S")
+
+    except Exception:
+
+        saved_start_dt = datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
+
+
 
 defaults = {
 
@@ -232,9 +318,9 @@ defaults = {
 
     "active_excl_keywords": [],
 
-    "monitoring": False,
+    "monitoring": saved_mon,
 
-    "monitor_start_time": None,
+    "monitor_start_time": saved_start_dt,
 
     "s_input": "",
 
@@ -256,7 +342,7 @@ for k, v in defaults.items():
 
 # ---------------------------------------------------------
 
-# 키워드 추가 / 삭제 / 검색 실행 콜백 함수
+# 키워드 추가 / 삭제 / 검색 / 감시 제어 콜백 함수
 
 # ---------------------------------------------------------
 
@@ -360,6 +446,36 @@ def cb_clear_monitor_kw():
 
 
 
+def cb_start_monitoring():
+
+    if st.session_state.m_input.strip():
+
+        cb_add_monitor_kw()
+
+    if st.session_state.e_input.strip():
+
+        cb_add_exclude_kw()
+
+    now_dt = datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
+
+    st.session_state.monitoring = True
+
+    st.session_state.monitor_start_time = now_dt
+
+    set_app_state("monitoring", "1")
+
+    set_app_state("monitor_start_time", now_dt.strftime("%Y-%m-%d %H:%M:%S"))
+
+
+
+def cb_stop_monitoring():
+
+    st.session_state.monitoring = False
+
+    set_app_state("monitoring", "0")
+
+
+
 def trigger_manual_search():
 
     if st.session_state.s_input.strip():
@@ -380,11 +496,9 @@ def trigger_manual_search():
 
 # ---------------------------------------------------------
 
-# 뉴스 RSS 수집 및 통합 제외 단어 필터링
+# 뉴스 RSS 수집 및 통합 제외 단어 필터링 (타임아웃 적용으로 먹통 방지)
 
 # ---------------------------------------------------------
-
-@st.cache_data(ttl=60)
 
 def fetch_feed(query_str):
 
@@ -398,7 +512,25 @@ def fetch_feed(query_str):
 
     )
 
-    return feedparser.parse(url)
+    try:
+
+        resp = requests.get(
+
+            url,
+
+            headers={"User-Agent": "Mozilla/5.0"},
+
+            timeout=8,
+
+            verify=False
+
+        )
+
+        return feedparser.parse(resp.content)
+
+    except Exception:
+
+        return feedparser.FeedParserDict(entries=[])
 
 
 
@@ -434,7 +566,7 @@ def process_news(base_keywords, excl_keywords, limit_time=None):
 
         seen = set()
 
-        for n in feed.entries:
+        for n in getattr(feed, "entries", []):
 
             title = n.title
 
@@ -504,8 +636,6 @@ if st.session_state.monitoring:
 
 
 
-# HTML 태그 없이 순수 Streamlit 타이틀 사용 (깨짐 방지)
-
 st.title("📊 [미술관TS그룹] 뉴스 모니터링 대시보드")
 
 st.divider()
@@ -547,6 +677,8 @@ with left:
             "제외 단어 입력",
 
             key="e_input",
+
+            placeholder="입력하세요...",
 
             label_visibility="collapsed",
 
@@ -599,6 +731,8 @@ with left:
             "검색어 입력",
 
             key="s_input",
+
+            placeholder="입력하세요...",
 
             label_visibility="collapsed",
 
@@ -694,6 +828,8 @@ with right:
 
             key="m_input",
 
+            placeholder="입력하세요...",
+
             label_visibility="collapsed",
 
             height=90
@@ -738,35 +874,17 @@ with right:
 
 
 
-        # 감시 목록 바로 밑, 감시 중지됨(상태창) 바로 위에 버튼 배치
+        # 감시 목록 바로 밑, 감시 중지됨(상태창) 바로 위에 버튼 배치 (콜백 방식으로 타이머 초기화 방지)
 
         c1, c2 = st.columns(2)
 
         with c1:
 
-            if st.button("🟢 시작", use_container_width=True):
-
-                if st.session_state.m_input.strip():
-
-                    cb_add_monitor_kw()
-
-                if st.session_state.e_input.strip():
-
-                    cb_add_exclude_kw()
-
-                st.session_state.monitoring = True
-
-                st.session_state.monitor_start_time = datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
-
-                st.rerun()
+            st.button("🟢 시작", use_container_width=True, on_click=cb_start_monitoring)
 
         with c2:
 
-            if st.button("🔴 종료", use_container_width=True):
-
-                st.session_state.monitoring = False
-
-                st.rerun()
+            st.button("🔴 종료", use_container_width=True, on_click=cb_stop_monitoring)
 
 
 
