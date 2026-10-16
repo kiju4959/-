@@ -36,7 +36,7 @@ st.set_page_config(page_title="미술관TS그룹 뉴스 모니터링", layout="w
 
 
 
-# 상단 여백 축소, 입력창 강조 및 3열 소형 버튼(체크/X) 스타일링 (HTML 태그 깨짐 방지를 위해 chr(60), chr(62) 사용)
+# 상단 여백 축소, 입력창 강조 및 균일한 박스형 버튼 스타일링 (HTML 태그 깨짐 방지를 위해 chr(60), chr(62) 사용)
 
 _lt, _gt = chr(60), chr(62)
 
@@ -46,7 +46,7 @@ st.markdown(
 
     .block-container {{
 
-        padding-top: 1.2rem !important;
+        padding-top: 1.1rem !important;
 
         padding-bottom: 1rem !important;
 
@@ -76,25 +76,15 @@ st.markdown(
 
     div.stButton {_gt} button {{
 
-        padding: 0.15rem 0.35rem !important;
+        padding: 0.2rem 0.35rem !important;
 
-        min-height: 1.75rem !important;
+        height: 2.05rem !important;
 
-        font-size: 0.78rem !important;
+        min-height: 2.05rem !important;
 
-        line-height: 1.15 !important;
+        border-radius: 6px !important;
 
-    }}
-
-    div[data-testid="stCheckbox"] {{
-
-        margin-bottom: -0.2rem !important;
-
-    }}
-
-    div[data-testid="stCheckbox"] label span {{
-
-        font-size: 0.78rem !important;
+        border: 1px solid rgba(128, 128, 128, 0.38) !important;
 
         white-space: nowrap !important;
 
@@ -104,11 +94,35 @@ st.markdown(
 
     }}
 
+    div.stButton {_gt} button p {{
+
+        font-size: 0.78rem !important;
+
+        line-height: 1.1 !important;
+
+        white-space: nowrap !important;
+
+        overflow: hidden !important;
+
+        text-overflow: ellipsis !important;
+
+        margin: 0 !important;
+
+    }}
+
+    div[data-testid="stHorizontalBlock"] {{
+
+        gap: 0.3rem !important;
+
+        align-items: center !important;
+
+    }}
+
     hr {{
 
         margin-top: 0.45rem !important;
 
-        margin-bottom: 0.6rem !important;
+        margin-bottom: 0.55rem !important;
 
     }}
 
@@ -161,8 +175,6 @@ def init_db():
         UNIQUE(category, keyword)
 
     )''')
-
-    # 기존 테이블에 enabled 컬럼이 없을 경우 자동 추가
 
     try:
 
@@ -416,7 +428,13 @@ defaults = {
 
     "e_input": "",
 
-    "m_input": ""
+    "m_input": "",
+
+    "del_mode_exclude": False,
+
+    "del_mode_search": False,
+
+    "del_mode_monitor": False
 
 }
 
@@ -432,7 +450,7 @@ for k, v in defaults.items():
 
 # ---------------------------------------------------------
 
-# 키워드 추가 / 체크(켜기·끄기) / 삭제 / 검색 / 감시 제어 콜백 함수
+# 키워드 추가 / 박스 클릭(켜기·끄기·개별삭제) / 검색 / 감시 제어 콜백 함수
 
 # ---------------------------------------------------------
 
@@ -474,8 +492,6 @@ def cb_add_search_kw():
 
         add_to_saved_list("search", kw)
 
-        st.session_state[f"chk_search_{kw}"] = True
-
     st.session_state.s_input = ""
 
 
@@ -485,8 +501,6 @@ def cb_add_exclude_kw():
     for kw in parse_exclude_input(st.session_state.e_input):
 
         add_to_saved_list("exclude", kw)
-
-        st.session_state[f"chk_exclude_{kw}"] = True
 
     st.session_state.e_input = ""
 
@@ -498,49 +512,43 @@ def cb_add_monitor_kw():
 
         add_to_saved_list("monitor", kw)
 
-        st.session_state[f"chk_monitor_{kw}"] = True
-
     st.session_state.m_input = ""
 
 
 
-def cb_toggle_kw(category, kw, chk_key):
+def cb_box_click(category, kw, current_en):
 
-    set_keyword_enabled(category, kw, st.session_state[chk_key])
+    # 개별 삭제 모드가 켜져 있을 때는 클릭 시 즉시 삭제, 평소에는 켜기(☑)/끄기(☐) 토글
+
+    if st.session_state.get(f"del_mode_{category}", False):
+
+        remove_from_saved_list(category, kw)
+
+    else:
+
+        set_keyword_enabled(category, kw, not current_en)
+
+
+
+def cb_toggle_del_mode(category):
+
+    key = f"del_mode_{category}"
+
+    st.session_state[key] = not st.session_state.get(key, False)
 
 
 
 def cb_set_all_kw(category, enabled):
 
+    st.session_state[f"del_mode_{category}"] = False
+
     set_all_keywords_enabled(category, enabled)
-
-    for kw, _ in get_saved_items(category):
-
-        st.session_state[f"chk_{category}_{kw}"] = enabled
-
-
-
-def cb_rm_kw(category, kw):
-
-    remove_from_saved_list(category, kw)
-
-    chk_key = f"chk_{category}_{kw}"
-
-    if chk_key in st.session_state:
-
-        del st.session_state[chk_key]
 
 
 
 def cb_clear_kw(category):
 
-    for kw, _ in get_saved_items(category):
-
-        chk_key = f"chk_{category}_{kw}"
-
-        if chk_key in st.session_state:
-
-            del st.session_state[chk_key]
+    st.session_state[f"del_mode_{category}"] = False
 
     clear_saved_list(category)
 
@@ -600,7 +608,7 @@ def trigger_manual_search():
 
 # ---------------------------------------------------------
 
-# 3열 컴팩트 체크박스 + X 버튼 + 스크롤 박스 렌더링 함수
+# 3열 균일 테두리 박스 렌더링 함수 (박스 크기 100% 통일 + 스크롤)
 
 # ---------------------------------------------------------
 
@@ -612,31 +620,55 @@ def render_keyword_grid(items, category, title_label="목록", scroll_threshold=
 
 
 
+    del_mode = st.session_state.get(f"del_mode_{category}", False)
+
     enabled_cnt = sum(1 for _, en in items if en)
 
-    h1, h2, h3, h4 = st.columns([2.2, 1.1, 1.1, 1.1])
 
-    with h1:
+
+    # 상단 헤더: 줄바꿈이 절대 생기지 않도록 깔끔한 2글자 버튼 4개 배치
+
+    h_title, h_b1, h_b2, h_b3, h_b4 = st.columns([2.1, 1.0, 1.0, 1.0, 1.0])
+
+    with h_title:
 
         st.markdown(f"**{title_label} ({enabled_cnt}/{len(items)})**")
 
-    with h2:
+    with h_b1:
 
-        st.button("전체선택", key=f"all_on_{category}", use_container_width=True, on_click=cb_set_all_kw, args=(category, True))
+        st.button("전체", key=f"all_on_{category}", use_container_width=True, on_click=cb_set_all_kw, args=(category, True))
 
-    with h3:
+    with h_b2:
 
-        st.button("전체해제", key=f"all_off_{category}", use_container_width=True, on_click=cb_set_all_kw, args=(category, False))
+        st.button("해제", key=f"all_off_{category}", use_container_width=True, on_click=cb_set_all_kw, args=(category, False))
 
-    with h4:
+    with h_b3:
 
-        st.button("전체삭제", key=f"clear_{category}", use_container_width=True, on_click=cb_clear_kw, args=(category,))
+        st.button(
+
+            "완료" if del_mode else "삭제",
+
+            key=f"del_mode_btn_{category}",
+
+            type="primary" if del_mode else "secondary",
+
+            use_container_width=True,
+
+            on_click=cb_toggle_del_mode,
+
+            args=(category,)
+
+        )
+
+    with h_b4:
+
+        st.button("비움", key=f"clear_{category}", use_container_width=True, on_click=cb_clear_kw, args=(category,))
 
 
 
-    # 3열 기준 3줄(9개) 초과 시 스크롤 박스 생성
+    # 3열 균일 박스 그리드 (9개 초과 시 고정 높이 스크롤)
 
-    box = st.container(height=135, border=False) if len(items) > scroll_threshold else st.container(border=False)
+    box = st.container(height=140, border=False) if len(items) > scroll_threshold else st.container(border=False)
 
     with box:
 
@@ -652,43 +684,29 @@ def render_keyword_grid(items, category, title_label="목록", scroll_threshold=
 
                     kw, en = items[item_idx]
 
-                    chk_key = f"chk_{category}_{kw}"
+                    if del_mode:
 
-                    if chk_key not in st.session_state:
+                        label = f"✕ {kw}"
 
-                        st.session_state[chk_key] = en
+                    else:
+
+                        label = f"☑ {kw}" if en else f"☐ {kw}"
 
                     with cols[col_idx]:
 
-                        c_chk, c_del = st.columns([3.2, 1])
+                        st.button(
 
-                        with c_chk:
+                            label,
 
-                            st.checkbox(
+                            key=f"box_{category}_{item_idx}_{kw}",
 
-                                kw,
+                            use_container_width=True,
 
-                                key=chk_key,
+                            on_click=cb_box_click,
 
-                                on_change=cb_toggle_kw,
+                            args=(category, kw, en)
 
-                                args=(category, kw, chk_key)
-
-                            )
-
-                        with c_del:
-
-                            st.button(
-
-                                "✕",
-
-                                key=f"rm_{category}_{item_idx}_{kw}",
-
-                                on_click=cb_rm_kw,
-
-                                args=(category, kw)
-
-                            )
+                        )
 
 
 
@@ -846,8 +864,6 @@ now = datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
 
 
 
-# 전체 목록(체크 상태 포함) 및 현재 체크(활성화)된 목록 불러오기
-
 search_items_db = get_saved_items("search")
 
 exclude_items_db = get_saved_items("exclude")
@@ -960,7 +976,7 @@ with left:
 
 # =========================================================
 
-# 우측 패널: 감시 패널 (엔터 입력 -> 3열 체크/X 감시 목록 -> 버튼 -> 감시 상태)
+# 우측 패널: 감시 패널 (엔터 입력 -> 3열 균일 박스 감시 목록 -> 버튼 -> 감시 상태)
 
 # =========================================================
 
@@ -1066,7 +1082,7 @@ with right:
 
 
 
-    # 감시 작동 로직 (체크되어 활성화된 감시 키워드 + 체크된 통합 제외 단어만 반영)
+    # 감시 작동 로직
 
     if st.session_state.monitoring and enabled_monitor_kws and st.session_state.monitor_start_time:
 
@@ -1166,7 +1182,7 @@ with right:
 
 # =========================================================
 
-# 중앙 패널: 맞춤 검색 결과 출력 (체크된 키워드만 검색)
+# 중앙 패널: 맞춤 검색 결과 출력
 
 # =========================================================
 
