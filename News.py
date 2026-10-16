@@ -362,8 +362,6 @@ def cb_clear_monitor_kw():
 
 def trigger_manual_search():
 
-    # 입력창에 아직 추가 버튼을 누르지 않은 텍스트가 남아있다면 자동으로 목록에 반영
-
     if st.session_state.s_input.strip():
 
         cb_add_search_kw()
@@ -450,8 +448,6 @@ def process_news(base_keywords, excl_keywords, limit_time=None):
 
 
 
-            # 통합 제외 단어가 제목에 포함된 경우 2차 필터링으로 완벽 차단
-
             if any(ex_w.lower() in title.lower() for ex_w in excl_keywords if ex_w.strip()):
 
                 continue
@@ -508,7 +504,9 @@ if st.session_state.monitoring:
 
 
 
-st.markdown("&lt;h1 style=&#39;text-align:center;&#39;&gt;📊 [미술관TS그룹] 뉴스 모니터링 대시보드&lt;/h1&gt;", unsafe_allow_html=True)
+# HTML 태그 없이 순수 Streamlit 타이틀 사용 (깨짐 방지)
+
+st.title("📊 [미술관TS그룹] 뉴스 모니터링 대시보드")
 
 st.divider()
 
@@ -517,8 +515,6 @@ st.divider()
 now = datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
 
 
-
-# DB에서 현재 저장된 3가지 목록 불러오기
 
 search_keywords_db = get_saved_list("search")
 
@@ -534,79 +530,131 @@ left, center, right = st.columns([2.2, 4.6, 2.2])
 
 # =========================================================
 
-# 좌측 패널: 1) 맞춤 검색 + 2) 통합 제외 단어
+# 좌측 패널: 1) 통합 제외 단어 (상단) + 2) 맞춤 검색 (하단)
 
 # =========================================================
 
 with left:
 
-    st.subheader("🎛️ 맞춤 검색")
+    # 1. 통합 제외 단어
 
-    st.caption("검색어를 추가해 두면 웹을 껐다 켜도 목록이 그대로 유지됩니다.")
+    with st.container(border=True):
 
+        st.subheader("🚫 통합 제외 단어")
 
+        st.text_input(
 
-    with st.expander("➕ 맞춤 검색어 추가", expanded=not bool(search_keywords_db)):
+            "제외 단어 입력",
 
-        st.text_area(
+            key="e_input",
 
-            "🟢 검색어 입력 (엔터로 여러 개 줄바꿈 입력)",
+            label_visibility="collapsed",
 
-            placeholder="예)\n삼성\n에스원\n삼성 집회\n리움미술관",
-
-            key="s_input",
-
-            height=110
+            on_change=cb_add_exclude_kw
 
         )
 
-        st.button("📥 맞춤 검색 목록에 추가", use_container_width=True, on_click=cb_add_search_kw)
+        st.button("➕ 제외 단어 추가", use_container_width=True, on_click=cb_add_exclude_kw)
 
 
 
-    col_s_title, col_s_clear = st.columns([3, 2])
+        if exclude_keywords_db:
 
-    with col_s_title:
+            st.divider()
 
-        st.markdown(f"**📋 맞춤 검색 목록 ({len(search_keywords_db)}개)**")
+            col_e1, col_e2 = st.columns([3, 2])
 
-    with col_s_clear:
+            with col_e1:
+
+                st.markdown(f"**목록 ({len(exclude_keywords_db)})**")
+
+            with col_e2:
+
+                st.button("전체 삭제", key="clear_e", use_container_width=True, on_click=cb_clear_exclude_kw)
+
+
+
+            for i, kw in enumerate(exclude_keywords_db):
+
+                c_kw, c_rm = st.columns([4, 1])
+
+                with c_kw:
+
+                    st.markdown(f"• {kw}")
+
+                with c_rm:
+
+                    st.button("❌", key=f"rm_e_{i}_{kw}", on_click=cb_rm_exclude_kw, args=(kw,))
+
+
+
+    # 2. 맞춤 검색
+
+    with st.container(border=True):
+
+        st.subheader("🎛️ 맞춤 검색")
+
+        st.text_area(
+
+            "검색어 입력",
+
+            key="s_input",
+
+            label_visibility="collapsed",
+
+            height=90
+
+        )
+
+        st.button("➕ 검색어 추가", use_container_width=True, on_click=cb_add_search_kw)
+
+
 
         if search_keywords_db:
 
-            st.button("🗑️ 전체 삭제", key="clear_s", use_container_width=True, on_click=cb_clear_search_kw)
+            st.divider()
+
+            col_s1, col_s2 = st.columns([3, 2])
+
+            with col_s1:
+
+                st.markdown(f"**목록 ({len(search_keywords_db)})**")
+
+            with col_s2:
+
+                st.button("전체 삭제", key="clear_s", use_container_width=True, on_click=cb_clear_search_kw)
 
 
 
-    if not search_keywords_db:
+            for i, kw in enumerate(search_keywords_db):
 
-        st.info("등록된 맞춤 검색어가 없습니다.")
+                c_kw, c_rm = st.columns([4, 1])
 
-    else:
+                with c_kw:
 
-        for i, kw in enumerate(search_keywords_db):
+                    st.markdown(f"• **{kw}**")
 
-            c_kw, c_rm = st.columns([4, 1])
+                with c_rm:
 
-            with c_kw:
-
-                st.markdown(f"• **{kw}**")
-
-            with c_rm:
-
-                st.button("❌", key=f"rm_s_{i}_{kw}", on_click=cb_rm_search_kw, args=(kw,))
+                    st.button("❌", key=f"rm_s_{i}_{kw}", on_click=cb_rm_search_kw, args=(kw,))
 
 
 
-    st.write("")
+        st.divider()
 
-    period = st.selectbox("검색 기간", ["1시간", "24시간", "48시간", "7일", "전체"], index=1)
+        c_p1, c_p2 = st.columns(2)
 
-    max_news = st.slider("최대 뉴스 수 (키워드당)", 10, 100, 30)
+        with c_p1:
+
+            period = st.selectbox("기간", ["1시간", "24시간", "48시간", "7일", "전체"], index=1)
+
+        with c_p2:
+
+            max_news = st.number_input("최대 건수", min_value=10, max_value=100, value=30, step=10)
 
 
 
-    st.button("🔍 맞춤 검색 시작", type="primary", use_container_width=True, on_click=trigger_manual_search)
+        st.button("🔍 맞춤 검색 시작", type="primary", use_container_width=True, on_click=trigger_manual_search)
 
 
 
@@ -626,193 +674,51 @@ with left:
 
 
 
-    st.divider()
-
-
-
-    # -----------------------------------------------------
-
-    # 통합 제외 단어 영역 (맞춤 검색 바로 하단 배치)
-
-    # -----------------------------------------------------
-
-    st.subheader("🚫 통합 제외 단어")
-
-    st.caption("여기에 등록된 단어는 [맞춤 검색]과 [감시 패널] 양쪽 모두에서 자동으로 제외됩니다.")
-
-
-
-    st.text_input(
-
-        "🔴 제외할 단어 입력 (공백/쉼표로 여러 개 입력 가능)",
-
-        placeholder="예) 야구 스포츠 라이온즈",
-
-        key="e_input",
-
-        on_change=cb_add_exclude_kw
-
-    )
-
-    st.button("📥 통합 제외 단어 추가", use_container_width=True, on_click=cb_add_exclude_kw)
-
-
-
-    col_e_title, col_e_clear = st.columns([3, 2])
-
-    with col_e_title:
-
-        st.markdown(f"**📋 제외 단어 목록 ({len(exclude_keywords_db)}개)**")
-
-    with col_e_clear:
-
-        if exclude_keywords_db:
-
-            st.button("🗑️ 전체 삭제", key="clear_e", use_container_width=True, on_click=cb_clear_exclude_kw)
-
-
-
-    if not exclude_keywords_db:
-
-        st.info("등록된 통합 제외 단어가 없습니다.")
-
-    else:
-
-        for i, kw in enumerate(exclude_keywords_db):
-
-            c_kw, c_rm = st.columns([4, 1])
-
-            with c_kw:
-
-                st.markdown(f"• `{kw}`")
-
-            with c_rm:
-
-                st.button("❌", key=f"rm_e_{i}_{kw}", on_click=cb_rm_exclude_kw, args=(kw,))
-
-
-
 # =========================================================
 
-# 우측 패널: 감시 패널
+# 우측 패널: 감시 패널 (입력 -> 감시 목록 -> 버튼 -> 감시 상태)
 
 # =========================================================
 
 with right:
 
-    st.subheader("📡 감시 패널")
+    with st.container(border=True):
 
-    c1, c2 = st.columns(2)
-
-    with c1:
-
-        if st.button("🟢 시작", use_container_width=True):
-
-            if st.session_state.m_input.strip():
-
-                cb_add_monitor_kw()
-
-            if st.session_state.e_input.strip():
-
-                cb_add_exclude_kw()
-
-            st.session_state.monitoring = True
-
-            st.session_state.monitor_start_time = datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
-
-            st.rerun()
-
-    with c2:
-
-        if st.button("🔴 종료", use_container_width=True):
-
-            st.session_state.monitoring = False
-
-            st.rerun()
+        st.subheader("📡 감시 패널")
 
 
-
-    if st.button("🔔 텔레그램 테스트 발송", use_container_width=True):
-
-        test_msg = "🚨 테스트 알림: [시스템 점검]\n\n📰 텔레그램 봇 연동 테스트입니다.\n\n🔗 https://news.google.com"
-
-        try:
-
-            res = requests.post(
-
-                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-
-                data={"chat_id": TELEGRAM_CHAT_ID, "text": test_msg},
-
-                timeout=10,
-
-                verify=False
-
-            )
-
-            if res.status_code == 200:
-
-                st.toast("✅ 텔레그램으로 테스트 메시지를 성공적으로 전송했습니다!")
-
-            else:
-
-                st.error("❌ 전송 실패. 토큰이나 Chat ID를 확인해주세요.")
-
-        except Exception as e:
-
-            st.error(f"❌ 통신 오류가 발생했습니다: {e}")
-
-
-
-    st.divider()
-
-
-
-    with st.expander("➕ 감시 키워드 추가", expanded=not bool(monitor_keywords_db)):
-
-        st.caption("💡 팁: '속보 삼성'처럼 단어를 붙여 쓰면 텔레그램 알림을 정교하게 제어할 수 있습니다.")
 
         st.text_area(
 
-            "🟢 추가할 감시 키워드 목록 (엔터로 줄바꿈)",
+            "감시 키워드 입력",
 
             key="m_input",
 
-            placeholder="예)\n삼성\n속보 에스원\n삼성 집회",
+            label_visibility="collapsed",
 
-            height=100
+            height=90
 
         )
 
-        st.button("📥 감시 목록에 추가", use_container_width=True, on_click=cb_add_monitor_kw)
+        st.button("➕ 감시 키워드 추가", use_container_width=True, on_click=cb_add_monitor_kw)
 
 
 
-    col_m_title, col_m_clear = st.columns([3, 2])
+        st.divider()
 
-    with col_m_title:
+        col_m1, col_m2 = st.columns([3, 2])
 
-        st.markdown(f"**📋 감시 목록 ({len(monitor_keywords_db)}개)**")
+        with col_m1:
 
-    with col_m_clear:
+            st.markdown(f"**감시 목록 ({len(monitor_keywords_db)})**")
 
-        if monitor_keywords_db:
+        with col_m2:
 
-            st.button("🗑️ 전체 삭제", key="clear_m", use_container_width=True, on_click=cb_clear_monitor_kw)
+            if monitor_keywords_db:
 
-
-
-    if exclude_keywords_db:
-
-        st.caption(f"🚫 통합 제외 적용 중: `{', '.join(exclude_keywords_db)}`")
+                st.button("전체 삭제", key="clear_m", use_container_width=True, on_click=cb_clear_monitor_kw)
 
 
-
-    if not monitor_keywords_db:
-
-        st.info("등록된 감시 키워드가 없습니다.")
-
-    else:
 
         for i, k in enumerate(monitor_keywords_db):
 
@@ -828,37 +734,101 @@ with right:
 
 
 
-    st.divider()
+        st.divider()
 
 
 
-    if st.session_state.monitoring:
+        # 감시 목록 바로 밑, 감시 중지됨(상태창) 바로 위에 버튼 배치
 
-        current_refresh_time = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")
+        c1, c2 = st.columns(2)
 
-        st.success(f"🟢 **AI 감시중** (60초 갱신)\n\n⏱️ 최근 갱신 시간: `{current_refresh_time}`")
+        with c1:
 
-    else:
+            if st.button("🟢 시작", use_container_width=True):
 
-        st.error("🔴 **감시 중지됨**")
+                if st.session_state.m_input.strip():
+
+                    cb_add_monitor_kw()
+
+                if st.session_state.e_input.strip():
+
+                    cb_add_exclude_kw()
+
+                st.session_state.monitoring = True
+
+                st.session_state.monitor_start_time = datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
+
+                st.rerun()
+
+        with c2:
+
+            if st.button("🔴 종료", use_container_width=True):
+
+                st.session_state.monitoring = False
+
+                st.rerun()
 
 
 
-    st.write(f"**DB 누적 전송:** {get_sent_count()}건")
+        if st.button("🔔 텔레그램 테스트 발송", use_container_width=True):
+
+            test_msg = "🚨 테스트 알림: [시스템 점검]\n\n📰 텔레그램 봇 연동 테스트입니다.\n\n🔗 https://news.google.com"
+
+            try:
+
+                res = requests.post(
+
+                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+
+                    data={"chat_id": TELEGRAM_CHAT_ID, "text": test_msg},
+
+                    timeout=10,
+
+                    verify=False
+
+                )
+
+                if res.status_code == 200:
+
+                    st.toast("✅ 전송 완료")
+
+                else:
+
+                    st.error("❌ 전송 실패")
+
+            except Exception as e:
+
+                st.error(f"❌ 오류: {e}")
 
 
 
-    for log in get_recent_logs(5):
+        # 감시 상태 표시
 
-        time_str = log[0].split(" ")[1][:5]
+        if st.session_state.monitoring:
 
-        st.caption(f"{time_str} | {log[1]}")
+            current_refresh_time = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%H:%M:%S")
 
-        st.write(f"- {log[2][:20]}...")
+            st.success(f"🟢 **감시중** (최근 갱신: `{current_refresh_time}`)")
+
+        else:
+
+            st.error("🔴 **감시 중지됨**")
 
 
 
-    # 감시 작동 로직 (저장된 감시 목록 + 통합 제외 단어 자동 결합)
+        st.caption(f"DB 누적 전송: {get_sent_count()}건")
+
+
+
+        for log in get_recent_logs(5):
+
+            time_str = log[0].split(" ")[1][:5]
+
+            st.caption(f"{time_str} | [{log[1]}] {log[2][:18]}...")
+
+
+
+    # 감시 작동 로직
 
     if st.session_state.monitoring and monitor_keywords_db and st.session_state.monitor_start_time:
 
@@ -964,9 +934,7 @@ with right:
 
 with center:
 
-    if st.session_state.run_search:
-
-        # 현재 DB에 저장된 최신 맞춤 검색 목록 및 통합 제외 단어를 기준으로 표시
+    if st.session_state.run_search and search_keywords_db:
 
         active_kws = search_keywords_db
 
@@ -974,101 +942,85 @@ with center:
 
 
 
-        if not active_kws:
+        grouped_data = {kw: [] for kw in active_kws}
 
-            st.warning("맞춤 검색 목록에 등록된 키워드가 없습니다. 좌측에서 검색어를 추가해 주세요.")
-
-        else:
-
-            grouped_data = {kw: [] for kw in active_kws}
-
-            total_searched_count = 0
+        total_searched_count = 0
 
 
 
-            breaking_news = []
+        breaking_news = []
 
-            seen_breaking_links = set()
-
-
-
-            raw_data = process_news(active_kws, active_excls, search_limit)
+        seen_breaking_links = set()
 
 
 
-            for d in raw_data:
-
-                kw = d["keyword"]
-
-                if kw in grouped_data and len(grouped_data[kw]) < max_news:
-
-                    grouped_data[kw].append(d)
-
-                    total_searched_count += 1
+        raw_data = process_news(active_kws, active_excls, search_limit)
 
 
 
-                    if d["breaking"] and d["link"] not in seen_breaking_links:
+        for d in raw_data:
 
-                        breaking_news.append(d)
+            kw = d["keyword"]
 
-                        seen_breaking_links.add(d["link"])
+            if kw in grouped_data and len(grouped_data[kw]) < max_news:
 
+                grouped_data[kw].append(d)
 
-
-            breakdown_text = ", ".join([f"{kw} {len(articles)}건" for kw, articles in grouped_data.items()])
-
-
-
-            st.subheader(f"📰 뉴스 검색 결과 (총 {total_searched_count}건) 🔹 `{breakdown_text}`")
-
-            if active_excls:
-
-                st.caption(f"🚫 적용된 통합 제외 단어: `{', '.join(active_excls)}`")
+                total_searched_count += 1
 
 
 
-            if breaking_news:
+                if d["breaking"] and d["link"] not in seen_breaking_links:
 
-                with st.expander(f"🚨 **키워드 통합 주요 속보 ({len(breaking_news)}건)**", expanded=True):
+                    breaking_news.append(d)
 
-                    st.error("💡 아래는 검색된 전체 키워드 중 '속보/긴급'이 포함된 주요 기사입니다.")
-
-                    breaking_news.sort(key=lambda x: x["date"], reverse=True)
-
-                    for d in breaking_news:
-
-                        st.markdown(f"#### 🚨 [{d['title']}]({d['link']})")
-
-                        st.caption(f"검색된 키워드: {d['keyword']} | {d['date'].strftime('%Y-%m-%d %H:%M')}")
+                    seen_breaking_links.add(d["link"])
 
 
 
-            for kw, articles in grouped_data.items():
-
-                is_expanded = len(articles) > 0
+        breakdown_text = ", ".join([f"{kw} {len(articles)}건" for kw, articles in grouped_data.items()])
 
 
 
-                with st.expander(f"📌 검색 키워드: **{kw}** ({len(articles)}건)", expanded=is_expanded):
+        st.subheader(f"📰 검색 결과 ({total_searched_count}건) 🔹 `{breakdown_text}`")
 
-                    if not articles:
 
-                        st.info("이 키워드에 해당하는 기사나 속보가 없습니다.")
 
-                    else:
+        if breaking_news:
 
-                        articles.sort(key=lambda x: x["date"], reverse=True)
+            with st.expander(f"🚨 주요 속보 ({len(breaking_news)}건)", expanded=True):
 
-                        for d in articles:
+                breaking_news.sort(key=lambda x: x["date"], reverse=True)
 
-                            icon = "🚨 " if d["breaking"] else ""
+                for d in breaking_news:
 
-                            st.markdown(f"#### {icon}[{d['title']}]({d['link']})")
+                    st.markdown(f"#### 🚨 [{d['title']}]({d['link']})")
 
-                            st.caption(f"{d['date'].strftime('%Y-%m-%d %H:%M')}")
+                    st.caption(f"{d['keyword']} | {d['date'].strftime('%Y-%m-%d %H:%M')}")
 
-    else:
 
-        st.info("좌측에서 **[맞춤 검색 목록]**과 **[통합 제외 단어]**를 확인하신 후 **'🔍 맞춤 검색 시작'** 버튼을 눌러주세요.")
+
+        for kw, articles in grouped_data.items():
+
+            is_expanded = len(articles) > 0
+
+
+
+            with st.expander(f"📌 **{kw}** ({len(articles)}건)", expanded=is_expanded):
+
+                if not articles:
+
+                    st.caption("검색된 기사가 없습니다.")
+
+                else:
+
+                    articles.sort(key=lambda x: x["date"], reverse=True)
+
+                    for d in articles:
+
+                        icon = "🚨 " if d["breaking"] else ""
+
+                        st.markdown(f"#### {icon}[{d['title']}]({d['link']})")
+
+                        st.caption(f"{d['date'].strftime('%Y-%m-%d %H:%M')}")
 
