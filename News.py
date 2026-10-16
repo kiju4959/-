@@ -36,7 +36,7 @@ st.set_page_config(page_title="미술관TS그룹 뉴스 모니터링", layout="w
 
 
 
-# 상단 여백 축소 및 입력창 테두리/배경색 강조 스타일 (HTML 태그 깨짐 방지를 위해 chr(60), chr(62) 사용)
+# 상단 여백 축소, 입력창 강조 및 3열 소형 버튼(체크/X) 스타일링 (HTML 태그 깨짐 방지를 위해 chr(60), chr(62) 사용)
 
 _lt, _gt = chr(60), chr(62)
 
@@ -74,11 +74,41 @@ st.markdown(
 
     }}
 
+    div.stButton {_gt} button {{
+
+        padding: 0.15rem 0.35rem !important;
+
+        min-height: 1.75rem !important;
+
+        font-size: 0.78rem !important;
+
+        line-height: 1.15 !important;
+
+    }}
+
+    div[data-testid="stCheckbox"] {{
+
+        margin-bottom: -0.2rem !important;
+
+    }}
+
+    div[data-testid="stCheckbox"] label span {{
+
+        font-size: 0.78rem !important;
+
+        white-space: nowrap !important;
+
+        overflow: hidden !important;
+
+        text-overflow: ellipsis !important;
+
+    }}
+
     hr {{
 
-        margin-top: 0.5rem !important;
+        margin-top: 0.45rem !important;
 
-        margin-bottom: 0.7rem !important;
+        margin-bottom: 0.6rem !important;
 
     }}
 
@@ -102,7 +132,7 @@ BREAK_KEYWORDS = ["속보", "긴급", "breaking", "Breaking"]
 
 # ---------------------------------------------------------
 
-# DB 초기화 및 영구 저장 함수 (감시 상태까지 DB에 영구 저장)
+# DB 초기화 및 영구 저장 함수 (활성/비활성 체크 상태까지 DB 저장)
 
 # ---------------------------------------------------------
 
@@ -126,9 +156,21 @@ def init_db():
 
         keyword TEXT,
 
+        enabled INTEGER DEFAULT 1,
+
         UNIQUE(category, keyword)
 
     )''')
+
+    # 기존 테이블에 enabled 컬럼이 없을 경우 자동 추가
+
+    try:
+
+        c.execute("ALTER TABLE saved_lists ADD COLUMN enabled INTEGER DEFAULT 1")
+
+    except Exception:
+
+        pass
 
     c.execute('''CREATE TABLE IF NOT EXISTS app_state (
 
@@ -170,11 +212,21 @@ def set_app_state(key, value):
 
 
 
-def get_saved_list(category):
+def get_saved_items(category):
 
     c = db_conn.cursor()
 
-    c.execute("SELECT keyword FROM saved_lists WHERE category = ? ORDER BY id ASC", (category,))
+    c.execute("SELECT keyword, COALESCE(enabled, 1) FROM saved_lists WHERE category = ? ORDER BY id ASC", (category,))
+
+    return [(row[0], bool(row[1])) for row in c.fetchall()]
+
+
+
+def get_enabled_list(category):
+
+    c = db_conn.cursor()
+
+    c.execute("SELECT keyword FROM saved_lists WHERE category = ? AND COALESCE(enabled, 1) = 1 ORDER BY id ASC", (category,))
 
     return [row[0] for row in c.fetchall()]
 
@@ -184,7 +236,29 @@ def add_to_saved_list(category, keyword):
 
     c = db_conn.cursor()
 
-    c.execute("INSERT OR IGNORE INTO saved_lists (category, keyword) VALUES (?, ?)", (category, keyword))
+    c.execute("INSERT OR IGNORE INTO saved_lists (category, keyword, enabled) VALUES (?, ?, 1)", (category, keyword))
+
+    c.execute("UPDATE saved_lists SET enabled = 1 WHERE category = ? AND keyword = ?", (category, keyword))
+
+    db_conn.commit()
+
+
+
+def set_keyword_enabled(category, keyword, enabled):
+
+    c = db_conn.cursor()
+
+    c.execute("UPDATE saved_lists SET enabled = ? WHERE category = ? AND keyword = ?", (1 if enabled else 0, category, keyword))
+
+    db_conn.commit()
+
+
+
+def set_all_keywords_enabled(category, enabled):
+
+    c = db_conn.cursor()
+
+    c.execute("UPDATE saved_lists SET enabled = ? WHERE category = ?", (1 if enabled else 0, category))
 
     db_conn.commit()
 
@@ -358,15 +432,13 @@ for k, v in defaults.items():
 
 # ---------------------------------------------------------
 
-# 키워드 추가 / 삭제 / 검색 / 감시 제어 콜백 함수
+# 키워드 추가 / 체크(켜기·끄기) / 삭제 / 검색 / 감시 제어 콜백 함수
 
 # ---------------------------------------------------------
 
 def parse_keyword_input(text):
 
     items = []
-
-    # 줄바꿈 또는 쉼표(,)로 구분 시 여러 개 동시 등록 가능, 공백 포함 검색어('속보 삼성' 등)도 그대로 유지
 
     for part in re.split(r'[\n,]+', text.strip()):
 
@@ -402,21 +474,9 @@ def cb_add_search_kw():
 
         add_to_saved_list("search", kw)
 
+        st.session_state[f"chk_search_{kw}"] = True
+
     st.session_state.s_input = ""
-
-
-
-def cb_rm_search_kw(kw):
-
-    remove_from_saved_list("search", kw)
-
-
-
-def cb_clear_search_kw():
-
-    clear_saved_list("search")
-
-    st.session_state.run_search = False
 
 
 
@@ -426,19 +486,9 @@ def cb_add_exclude_kw():
 
         add_to_saved_list("exclude", kw)
 
+        st.session_state[f"chk_exclude_{kw}"] = True
+
     st.session_state.e_input = ""
-
-
-
-def cb_rm_exclude_kw(kw):
-
-    remove_from_saved_list("exclude", kw)
-
-
-
-def cb_clear_exclude_kw():
-
-    clear_saved_list("exclude")
 
 
 
@@ -448,19 +498,55 @@ def cb_add_monitor_kw():
 
         add_to_saved_list("monitor", kw)
 
+        st.session_state[f"chk_monitor_{kw}"] = True
+
     st.session_state.m_input = ""
 
 
 
-def cb_rm_monitor_kw(kw):
+def cb_toggle_kw(category, kw, chk_key):
 
-    remove_from_saved_list("monitor", kw)
+    set_keyword_enabled(category, kw, st.session_state[chk_key])
 
 
 
-def cb_clear_monitor_kw():
+def cb_set_all_kw(category, enabled):
 
-    clear_saved_list("monitor")
+    set_all_keywords_enabled(category, enabled)
+
+    for kw, _ in get_saved_items(category):
+
+        st.session_state[f"chk_{category}_{kw}"] = enabled
+
+
+
+def cb_rm_kw(category, kw):
+
+    remove_from_saved_list(category, kw)
+
+    chk_key = f"chk_{category}_{kw}"
+
+    if chk_key in st.session_state:
+
+        del st.session_state[chk_key]
+
+
+
+def cb_clear_kw(category):
+
+    for kw, _ in get_saved_items(category):
+
+        chk_key = f"chk_{category}_{kw}"
+
+        if chk_key in st.session_state:
+
+            del st.session_state[chk_key]
+
+    clear_saved_list(category)
+
+    if category == "search":
+
+        st.session_state.run_search = False
 
 
 
@@ -504,9 +590,9 @@ def trigger_manual_search():
 
         cb_add_exclude_kw()
 
-    st.session_state.active_search_keywords = get_saved_list("search")
+    st.session_state.active_search_keywords = get_enabled_list("search")
 
-    st.session_state.active_excl_keywords = get_saved_list("exclude")
+    st.session_state.active_excl_keywords = get_enabled_list("exclude")
 
     st.session_state.run_search = True
 
@@ -514,53 +600,95 @@ def trigger_manual_search():
 
 # ---------------------------------------------------------
 
-# 2열 그리드 + 일정 개수 초과 시 스크롤 박스 렌더링 함수 (방법 1 + 2 결합)
+# 3열 컴팩트 체크박스 + X 버튼 + 스크롤 박스 렌더링 함수
 
 # ---------------------------------------------------------
 
-def render_keyword_grid(items, prefix, rm_callback, clear_callback, title_label="목록", scroll_threshold=6):
+def render_keyword_grid(items, category, title_label="목록", scroll_threshold=9):
 
     if not items:
 
         return
 
-    col_t, col_c = st.columns([3, 2])
-
-    with col_t:
-
-        st.markdown(f"**{title_label} ({len(items)})**")
-
-    with col_c:
-
-        st.button("전체 삭제", key=f"clear_{prefix}", use_container_width=True, on_click=clear_callback)
 
 
+    enabled_cnt = sum(1 for _, en in items if en)
 
-    # 키워드가 6개 이상이면 고정 높이(135px) 스크롤 영역 생성, 그 이하면 자연스럽게 표시
+    h1, h2, h3, h4 = st.columns([2.2, 1.1, 1.1, 1.1])
+
+    with h1:
+
+        st.markdown(f"**{title_label} ({enabled_cnt}/{len(items)})**")
+
+    with h2:
+
+        st.button("전체선택", key=f"all_on_{category}", use_container_width=True, on_click=cb_set_all_kw, args=(category, True))
+
+    with h3:
+
+        st.button("전체해제", key=f"all_off_{category}", use_container_width=True, on_click=cb_set_all_kw, args=(category, False))
+
+    with h4:
+
+        st.button("전체삭제", key=f"clear_{category}", use_container_width=True, on_click=cb_clear_kw, args=(category,))
+
+
+
+    # 3열 기준 3줄(9개) 초과 시 스크롤 박스 생성
 
     box = st.container(height=135, border=False) if len(items) > scroll_threshold else st.container(border=False)
 
     with box:
 
-        cols = st.columns(2)
+        for row_idx in range(0, len(items), 3):
 
-        for i, kw in enumerate(items):
+            cols = st.columns(3)
 
-            with cols[i % 2]:
+            for col_idx in range(3):
 
-                st.button(
+                item_idx = row_idx + col_idx
 
-                    f"{kw} ✕",
+                if item_idx < len(items):
 
-                    key=f"rm_{prefix}_{i}_{kw}",
+                    kw, en = items[item_idx]
 
-                    use_container_width=True,
+                    chk_key = f"chk_{category}_{kw}"
 
-                    on_click=rm_callback,
+                    if chk_key not in st.session_state:
 
-                    args=(kw,)
+                        st.session_state[chk_key] = en
 
-                )
+                    with cols[col_idx]:
+
+                        c_chk, c_del = st.columns([3.2, 1])
+
+                        with c_chk:
+
+                            st.checkbox(
+
+                                kw,
+
+                                key=chk_key,
+
+                                on_change=cb_toggle_kw,
+
+                                args=(category, kw, chk_key)
+
+                            )
+
+                        with c_del:
+
+                            st.button(
+
+                                "✕",
+
+                                key=f"rm_{category}_{item_idx}_{kw}",
+
+                                on_click=cb_rm_kw,
+
+                                args=(category, kw)
+
+                            )
 
 
 
@@ -706,7 +834,7 @@ if st.session_state.monitoring:
 
 
 
-# 최상단 헤더 영역 축소 (하단 실제 사용 화면 극대화)
+# 최상단 헤더 영역 축소
 
 st.markdown("#### 📊 [미술관TS그룹] 뉴스 모니터링 대시보드")
 
@@ -718,15 +846,25 @@ now = datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
 
 
 
-search_keywords_db = get_saved_list("search")
+# 전체 목록(체크 상태 포함) 및 현재 체크(활성화)된 목록 불러오기
 
-exclude_keywords_db = get_saved_list("exclude")
+search_items_db = get_saved_items("search")
 
-monitor_keywords_db = get_saved_list("monitor")
+exclude_items_db = get_saved_items("exclude")
+
+monitor_items_db = get_saved_items("monitor")
 
 
 
-left, center, right = st.columns([2.2, 4.6, 2.2])
+enabled_search_kws = get_enabled_list("search")
+
+enabled_exclude_kws = get_enabled_list("exclude")
+
+enabled_monitor_kws = get_enabled_list("monitor")
+
+
+
+left, center, right = st.columns([2.5, 4.0, 2.5])
 
 
 
@@ -738,7 +876,7 @@ left, center, right = st.columns([2.2, 4.6, 2.2])
 
 with left:
 
-    # 1. 통합 제외 단어 (엔터 입력 시 즉시 자동 추가, 추가 버튼 삭제)
+    # 1. 통합 제외 단어
 
     with st.container(border=True):
 
@@ -758,23 +896,11 @@ with left:
 
         )
 
-        render_keyword_grid(
-
-            exclude_keywords_db,
-
-            prefix="e",
-
-            rm_callback=cb_rm_exclude_kw,
-
-            clear_callback=cb_clear_exclude_kw,
-
-            title_label="목록"
-
-        )
+        render_keyword_grid(exclude_items_db, category="exclude", title_label="목록")
 
 
 
-    # 2. 맞춤 검색 (엔터 입력 시 즉시 자동 추가, 추가 버튼 삭제)
+    # 2. 맞춤 검색
 
     with st.container(border=True):
 
@@ -794,19 +920,7 @@ with left:
 
         )
 
-        render_keyword_grid(
-
-            search_keywords_db,
-
-            prefix="s",
-
-            rm_callback=cb_rm_search_kw,
-
-            clear_callback=cb_clear_search_kw,
-
-            title_label="목록"
-
-        )
+        render_keyword_grid(search_items_db, category="search", title_label="목록")
 
 
 
@@ -846,7 +960,7 @@ with left:
 
 # =========================================================
 
-# 우측 패널: 감시 패널 (엔터 입력 -> 2열 스크롤 감시 목록 -> 버튼 -> 감시 상태)
+# 우측 패널: 감시 패널 (엔터 입력 -> 3열 체크/X 감시 목록 -> 버튼 -> 감시 상태)
 
 # =========================================================
 
@@ -874,27 +988,13 @@ with right:
 
 
 
-        render_keyword_grid(
-
-            monitor_keywords_db,
-
-            prefix="m",
-
-            rm_callback=cb_rm_monitor_kw,
-
-            clear_callback=cb_clear_monitor_kw,
-
-            title_label="감시 목록"
-
-        )
+        render_keyword_grid(monitor_items_db, category="monitor", title_label="감시 목록")
 
 
 
         st.divider()
 
 
-
-        # 감시 목록 바로 밑, 감시 중지됨(상태창) 바로 위에 버튼 배치
 
         c1, c2 = st.columns(2)
 
@@ -966,11 +1066,11 @@ with right:
 
 
 
-    # 감시 작동 로직
+    # 감시 작동 로직 (체크되어 활성화된 감시 키워드 + 체크된 통합 제외 단어만 반영)
 
-    if st.session_state.monitoring and monitor_keywords_db and st.session_state.monitor_start_time:
+    if st.session_state.monitoring and enabled_monitor_kws and st.session_state.monitor_start_time:
 
-        monitor_data = process_news(monitor_keywords_db, exclude_keywords_db)
+        monitor_data = process_news(enabled_monitor_kws, enabled_exclude_kws)
 
         start = st.session_state.monitor_start_time
 
@@ -1066,17 +1166,17 @@ with right:
 
 # =========================================================
 
-# 중앙 패널: 맞춤 검색 결과 출력
+# 중앙 패널: 맞춤 검색 결과 출력 (체크된 키워드만 검색)
 
 # =========================================================
 
 with center:
 
-    if st.session_state.run_search and search_keywords_db:
+    if st.session_state.run_search and enabled_search_kws:
 
-        active_kws = search_keywords_db
+        active_kws = enabled_search_kws
 
-        active_excls = exclude_keywords_db
+        active_excls = enabled_exclude_kws
 
 
 
