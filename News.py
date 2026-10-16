@@ -36,7 +36,7 @@ st.set_page_config(page_title="미술관TS그룹 뉴스 모니터링", layout="w
 
 
 
-# 상단 여백 축소, 입력창 강조 및 3열 일체형 키워드 박스([✅ 키워드 | ✕]) 스타일링
+# 1) 최상단 헤더/툴바 여백 극소화 + 2) 양 사이드 패널 상단 고정(flex-start + sticky) 스타일
 
 _lt, _gt = chr(60), chr(62)
 
@@ -44,11 +44,49 @@ st.markdown(
 
     f"""{_lt}style{_gt}
 
+    header[data-testid="stHeader"] {{
+
+        height: 1.5rem !important;
+
+        min-height: 1.5rem !important;
+
+        background: transparent !important;
+
+    }}
+
     .block-container {{
 
-        padding-top: 1.1rem !important;
+        padding-top: 0.35rem !important;
 
-        padding-bottom: 1rem !important;
+        padding-bottom: 0.8rem !important;
+
+    }}
+
+    /* 메인 3단 컬럼이 중앙 정렬로 밀려 내려가지 않도록 최상단(flex-start)에 고정 */
+
+    div[data-testid="stHorizontalBlock"] {{
+
+        gap: 0.22rem !important;
+
+        align-items: flex-start !important;
+
+    }}
+
+    /* 화면 스크롤 시에도 좌(1번째)·우(3번째) 사이드 패널이 상단에 따라붙도록 sticky 처리 */
+
+    div[data-testid="stMainBlockContainer"] {_gt} div {_gt} div {_gt} div[data-testid="stHorizontalBlock"] {_gt} div[data-testid="column"]:nth-child(1),
+
+    div[data-testid="stMainBlockContainer"] {_gt} div {_gt} div {_gt} div[data-testid="stHorizontalBlock"] {_gt} div[data-testid="column"]:nth-child(3),
+
+    div[data-testid="stMainBlockContainer"] {_gt} div {_gt} div {_gt} div[data-testid="stHorizontalBlock"] {_gt} div[data-testid="stColumn"]:nth-child(1),
+
+    div[data-testid="stMainBlockContainer"] {_gt} div {_gt} div {_gt} div[data-testid="stHorizontalBlock"] {_gt} div[data-testid="stColumn"]:nth-child(3) {{
+
+        position: sticky !important;
+
+        top: 0.5rem !important;
+
+        align-self: flex-start !important;
 
     }}
 
@@ -110,19 +148,11 @@ st.markdown(
 
     }}
 
-    div[data-testid="stHorizontalBlock"] {{
-
-        gap: 0.22rem !important;
-
-        align-items: center !important;
-
-    }}
-
     hr {{
 
-        margin-top: 0.45rem !important;
+        margin-top: 0.25rem !important;
 
-        margin-bottom: 0.55rem !important;
+        margin-bottom: 0.4rem !important;
 
     }}
 
@@ -826,9 +856,9 @@ if st.session_state.monitoring:
 
 
 
-# 최상단 헤더 영역 축소
+# 최상단 헤더 영역 초슬림화 (한 줄 텍스트 + 최소 여백)
 
-st.markdown("#### 📊 [미술관TS그룹] 뉴스 모니터링 대시보드")
+st.markdown("**📊 [미술관TS그룹] 뉴스 모니터링 대시보드**")
 
 st.divider()
 
@@ -1156,7 +1186,7 @@ with right:
 
 # =========================================================
 
-# 중앙 패널: 맞춤 검색 결과 출력
+# 중앙 패널: 맞춤 검색 결과 출력 (독립 스크롤 컨테이너로 양옆 패널 고정)
 
 # =========================================================
 
@@ -1214,41 +1244,47 @@ with center:
 
 
 
-        if breaking_news:
+        # 검색 결과가 아무리 많아져도 중앙 박스 내부에서만 스크롤되어 좌우 패널이 절대 움직이지 않음
 
-            with st.expander(f"🚨 주요 속보 ({len(breaking_news)}건)", expanded=True):
+        results_box = st.container(height=760, border=False)
 
-                breaking_news.sort(key=lambda x: x["date"], reverse=True)
+        with results_box:
 
-                for d in breaking_news:
+            if breaking_news:
 
-                    st.markdown(f"#### 🚨 [{d['title']}]({d['link']})")
+                with st.expander(f"🚨 주요 속보 ({len(breaking_news)}건)", expanded=True):
 
-                    st.caption(f"{d['keyword']} | {d['date'].strftime('%Y-%m-%d %H:%M')}")
+                    breaking_news.sort(key=lambda x: x["date"], reverse=True)
+
+                    for d in breaking_news:
+
+                        st.markdown(f"#### 🚨 [{d['title']}]({d['link']})")
+
+                        st.caption(f"{d['keyword']} | {d['date'].strftime('%Y-%m-%d %H:%M')}")
 
 
 
-        for kw, articles in grouped_data.items():
+            for kw, articles in grouped_data.items():
 
-            is_expanded = len(articles) > 0
+                is_expanded = len(articles) > 0
 
 
 
-            with st.expander(f"📌 **{kw}** ({len(articles)}건)", expanded=is_expanded):
+                with st.expander(f"📌 **{kw}** ({len(articles)}건)", expanded=is_expanded):
 
-                if not articles:
+                    if not articles:
 
-                    st.caption("검색된 기사가 없습니다.")
+                        st.caption("검색된 기사가 없습니다.")
 
-                else:
+                    else:
 
-                    articles.sort(key=lambda x: x["date"], reverse=True)
+                        articles.sort(key=lambda x: x["date"], reverse=True)
 
-                    for d in articles:
+                        for d in articles:
 
-                        icon = "🚨 " if d["breaking"] else ""
+                            icon = "🚨 " if d["breaking"] else ""
 
-                        st.markdown(f"#### {icon}[{d['title']}]({d['link']})")
+                            st.markdown(f"#### {icon}[{d['title']}]({d['link']})")
 
-                        st.caption(f"{d['date'].strftime('%Y-%m-%d %H:%M')}")
+                            st.caption(f"{d['date'].strftime('%Y-%m-%d %H:%M')}")
 
