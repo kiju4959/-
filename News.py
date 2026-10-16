@@ -1,40 +1,21 @@
 import streamlit as st
-
 import feedparser
-
 import urllib.parse
-
 import sqlite3
-
 import requests
-
 import re
-
 import urllib3
-
 import difflib
 
-
-
 from concurrent.futures import ThreadPoolExecutor
-
 from datetime import datetime, timedelta
-
 from email.utils import parsedate_to_datetime
-
 from zoneinfo import ZoneInfo
-
 from streamlit_autorefresh import st_autorefresh
-
-
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-
-
 st.set_page_config(page_title="미술관TS그룹 뉴스 모니터링", layout="wide")
-
-
 
 # 1) 최상단 헤더/툴바 여백 극소화 + 2) 양 사이드 패널 상단 고정(flex-start + sticky) 스타일
 
@@ -858,7 +839,7 @@ if st.session_state.monitoring:
 
 # 최상단 헤더 영역 초슬림화 (한 줄 텍스트 + 최소 여백)
 
-st.markdown("**📊 [미술관TS그룹] 뉴스 모니터링 대시보드**")
+st.markdown("#### 📊 [미술관TS그룹] 뉴스 모니터링 대시보드")
 
 st.divider()
 
