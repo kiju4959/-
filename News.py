@@ -36,7 +36,7 @@ st.set_page_config(page_title="미술관TS그룹 뉴스 모니터링", layout="w
 
 
 
-# 상단 여백 축소, 입력창 강조 및 균일한 박스형 버튼 스타일링 (HTML 태그 깨짐 방지를 위해 chr(60), chr(62) 사용)
+# 상단 여백 축소, 입력창 강조 및 3열 일체형 키워드 박스([✅ 키워드 | ✕]) 스타일링
 
 _lt, _gt = chr(60), chr(62)
 
@@ -76,15 +76,15 @@ st.markdown(
 
     div.stButton {_gt} button {{
 
-        padding: 0.2rem 0.35rem !important;
+        padding: 0.15rem 0.25rem !important;
 
-        height: 2.05rem !important;
+        height: 2.0rem !important;
 
-        min-height: 2.05rem !important;
+        min-height: 2.0rem !important;
 
         border-radius: 6px !important;
 
-        border: 1px solid rgba(128, 128, 128, 0.38) !important;
+        border: 1px solid rgba(128, 128, 128, 0.4) !important;
 
         white-space: nowrap !important;
 
@@ -96,7 +96,7 @@ st.markdown(
 
     div.stButton {_gt} button p {{
 
-        font-size: 0.78rem !important;
+        font-size: 0.76rem !important;
 
         line-height: 1.1 !important;
 
@@ -112,7 +112,7 @@ st.markdown(
 
     div[data-testid="stHorizontalBlock"] {{
 
-        gap: 0.3rem !important;
+        gap: 0.22rem !important;
 
         align-items: center !important;
 
@@ -428,13 +428,7 @@ defaults = {
 
     "e_input": "",
 
-    "m_input": "",
-
-    "del_mode_exclude": False,
-
-    "del_mode_search": False,
-
-    "del_mode_monitor": False
+    "m_input": ""
 
 }
 
@@ -450,7 +444,7 @@ for k, v in defaults.items():
 
 # ---------------------------------------------------------
 
-# 키워드 추가 / 박스 클릭(켜기·끄기·개별삭제) / 검색 / 감시 제어 콜백 함수
+# 키워드 추가 / 체크(✅·⬜) / 개별삭제(✕) / 일괄제어 콜백 함수
 
 # ---------------------------------------------------------
 
@@ -516,39 +510,25 @@ def cb_add_monitor_kw():
 
 
 
-def cb_box_click(category, kw, current_en):
+def cb_toggle_kw(category, kw, current_en):
 
-    # 개별 삭제 모드가 켜져 있을 때는 클릭 시 즉시 삭제, 평소에는 켜기(☑)/끄기(☐) 토글
-
-    if st.session_state.get(f"del_mode_{category}", False):
-
-        remove_from_saved_list(category, kw)
-
-    else:
-
-        set_keyword_enabled(category, kw, not current_en)
+    set_keyword_enabled(category, kw, not current_en)
 
 
 
-def cb_toggle_del_mode(category):
+def cb_rm_kw(category, kw):
 
-    key = f"del_mode_{category}"
-
-    st.session_state[key] = not st.session_state.get(key, False)
+    remove_from_saved_list(category, kw)
 
 
 
 def cb_set_all_kw(category, enabled):
-
-    st.session_state[f"del_mode_{category}"] = False
 
     set_all_keywords_enabled(category, enabled)
 
 
 
 def cb_clear_kw(category):
-
-    st.session_state[f"del_mode_{category}"] = False
 
     clear_saved_list(category)
 
@@ -608,7 +588,7 @@ def trigger_manual_search():
 
 # ---------------------------------------------------------
 
-# 3열 균일 테두리 박스 렌더링 함수 (박스 크기 100% 통일 + 스크롤)
+# 3열 균일 테두리 박스 ([✅ 키워드] + [✕]) 렌더링 함수
 
 # ---------------------------------------------------------
 
@@ -620,15 +600,13 @@ def render_keyword_grid(items, category, title_label="목록", scroll_threshold=
 
 
 
-    del_mode = st.session_state.get(f"del_mode_{category}", False)
-
     enabled_cnt = sum(1 for _, en in items if en)
 
 
 
-    # 상단 헤더: 줄바꿈이 절대 생기지 않도록 깔끔한 2글자 버튼 4개 배치
+    # 상단 헤더: 목록 개수 + [전체선택 / 전체해제 / 전체삭제] 3개 버튼 (한 줄 고정)
 
-    h_title, h_b1, h_b2, h_b3, h_b4 = st.columns([2.1, 1.0, 1.0, 1.0, 1.0])
+    h_title, h_b1, h_b2, h_b3 = st.columns([1.5, 1.15, 1.15, 1.15])
 
     with h_title:
 
@@ -636,39 +614,21 @@ def render_keyword_grid(items, category, title_label="목록", scroll_threshold=
 
     with h_b1:
 
-        st.button("전체", key=f"all_on_{category}", use_container_width=True, on_click=cb_set_all_kw, args=(category, True))
+        st.button("전체선택", key=f"all_on_{category}", use_container_width=True, on_click=cb_set_all_kw, args=(category, True))
 
     with h_b2:
 
-        st.button("해제", key=f"all_off_{category}", use_container_width=True, on_click=cb_set_all_kw, args=(category, False))
+        st.button("전체해제", key=f"all_off_{category}", use_container_width=True, on_click=cb_set_all_kw, args=(category, False))
 
     with h_b3:
 
-        st.button(
-
-            "완료" if del_mode else "삭제",
-
-            key=f"del_mode_btn_{category}",
-
-            type="primary" if del_mode else "secondary",
-
-            use_container_width=True,
-
-            on_click=cb_toggle_del_mode,
-
-            args=(category,)
-
-        )
-
-    with h_b4:
-
-        st.button("비움", key=f"clear_{category}", use_container_width=True, on_click=cb_clear_kw, args=(category,))
+        st.button("전체삭제", key=f"clear_{category}", use_container_width=True, on_click=cb_clear_kw, args=(category,))
 
 
 
-    # 3열 균일 박스 그리드 (9개 초과 시 고정 높이 스크롤)
+    # 3열 그리드: 각 셀마다 뚜렷한 체크 아이콘(✅/⬜)이 들어간 키워드 박스와 ✕ 삭제 버튼을 나란히 배치
 
-    box = st.container(height=140, border=False) if len(items) > scroll_threshold else st.container(border=False)
+    box = st.container(height=145, border=False) if len(items) > scroll_threshold else st.container(border=False)
 
     with box:
 
@@ -684,29 +644,43 @@ def render_keyword_grid(items, category, title_label="목록", scroll_threshold=
 
                     kw, en = items[item_idx]
 
-                    if del_mode:
-
-                        label = f"✕ {kw}"
-
-                    else:
-
-                        label = f"☑ {kw}" if en else f"☐ {kw}"
+                    icon = "✅" if en else "⬜"
 
                     with cols[col_idx]:
 
-                        st.button(
+                        c_kw, c_del = st.columns([3.4, 1.0])
 
-                            label,
+                        with c_kw:
 
-                            key=f"box_{category}_{item_idx}_{kw}",
+                            st.button(
 
-                            use_container_width=True,
+                                f"{icon} {kw}",
 
-                            on_click=cb_box_click,
+                                key=f"tgl_{category}_{item_idx}_{kw}",
 
-                            args=(category, kw, en)
+                                use_container_width=True,
 
-                        )
+                                on_click=cb_toggle_kw,
+
+                                args=(category, kw, en)
+
+                            )
+
+                        with c_del:
+
+                            st.button(
+
+                                "✕",
+
+                                key=f"rm_{category}_{item_idx}_{kw}",
+
+                                use_container_width=True,
+
+                                on_click=cb_rm_kw,
+
+                                args=(category, kw)
+
+                            )
 
 
 
@@ -880,7 +854,7 @@ enabled_monitor_kws = get_enabled_list("monitor")
 
 
 
-left, center, right = st.columns([2.5, 4.0, 2.5])
+left, center, right = st.columns([2.6, 3.8, 2.6])
 
 
 
