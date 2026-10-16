@@ -36,13 +36,21 @@ st.set_page_config(page_title="미술관TS그룹 뉴스 모니터링", layout="w
 
 
 
-# 입력창 테두리 및 배경색 강조 스타일 (HTML 태그 깨짐 방지를 위해 chr(60), chr(62) 사용)
+# 상단 여백 축소 및 입력창 테두리/배경색 강조 스타일 (HTML 태그 깨짐 방지를 위해 chr(60), chr(62) 사용)
 
 _lt, _gt = chr(60), chr(62)
 
 st.markdown(
 
     f"""{_lt}style{_gt}
+
+    .block-container {{
+
+        padding-top: 1.2rem !important;
+
+        padding-bottom: 1rem !important;
+
+    }}
 
     div[data-baseweb="input"] {_gt} div,
 
@@ -63,6 +71,14 @@ st.markdown(
         border: 2px solid #2b6cb0 !important;
 
         background-color: rgba(43, 108, 176, 0.05) !important;
+
+    }}
+
+    hr {{
+
+        margin-top: 0.5rem !important;
+
+        margin-bottom: 0.7rem !important;
 
     }}
 
@@ -346,17 +362,19 @@ for k, v in defaults.items():
 
 # ---------------------------------------------------------
 
-def parse_multiline_input(text):
+def parse_keyword_input(text):
 
     items = []
 
-    for line in text.split('\n'):
+    # 줄바꿈 또는 쉼표(,)로 구분 시 여러 개 동시 등록 가능, 공백 포함 검색어('속보 삼성' 등)도 그대로 유지
 
-        clean_line = re.sub(r'^(\d+\.|-|\*)\s*', '', line.strip()).strip()
+    for part in re.split(r'[\n,]+', text.strip()):
 
-        if clean_line and clean_line not in items:
+        clean_part = re.sub(r'^(\d+\.|-|\*)\s*', '', part.strip()).strip()
 
-            items.append(clean_line)
+        if clean_part and clean_part not in items:
+
+            items.append(clean_part)
 
     return items
 
@@ -380,7 +398,7 @@ def parse_exclude_input(text):
 
 def cb_add_search_kw():
 
-    for kw in parse_multiline_input(st.session_state.s_input):
+    for kw in parse_keyword_input(st.session_state.s_input):
 
         add_to_saved_list("search", kw)
 
@@ -426,7 +444,7 @@ def cb_clear_exclude_kw():
 
 def cb_add_monitor_kw():
 
-    for kw in parse_multiline_input(st.session_state.m_input):
+    for kw in parse_keyword_input(st.session_state.m_input):
 
         add_to_saved_list("monitor", kw)
 
@@ -491,6 +509,58 @@ def trigger_manual_search():
     st.session_state.active_excl_keywords = get_saved_list("exclude")
 
     st.session_state.run_search = True
+
+
+
+# ---------------------------------------------------------
+
+# 2열 그리드 + 일정 개수 초과 시 스크롤 박스 렌더링 함수 (방법 1 + 2 결합)
+
+# ---------------------------------------------------------
+
+def render_keyword_grid(items, prefix, rm_callback, clear_callback, title_label="목록", scroll_threshold=6):
+
+    if not items:
+
+        return
+
+    col_t, col_c = st.columns([3, 2])
+
+    with col_t:
+
+        st.markdown(f"**{title_label} ({len(items)})**")
+
+    with col_c:
+
+        st.button("전체 삭제", key=f"clear_{prefix}", use_container_width=True, on_click=clear_callback)
+
+
+
+    # 키워드가 6개 이상이면 고정 높이(135px) 스크롤 영역 생성, 그 이하면 자연스럽게 표시
+
+    box = st.container(height=135, border=False) if len(items) > scroll_threshold else st.container(border=False)
+
+    with box:
+
+        cols = st.columns(2)
+
+        for i, kw in enumerate(items):
+
+            with cols[i % 2]:
+
+                st.button(
+
+                    f"{kw} ✕",
+
+                    key=f"rm_{prefix}_{i}_{kw}",
+
+                    use_container_width=True,
+
+                    on_click=rm_callback,
+
+                    args=(kw,)
+
+                )
 
 
 
@@ -636,7 +706,9 @@ if st.session_state.monitoring:
 
 
 
-st.title("📊 [미술관TS그룹] 뉴스 모니터링 대시보드")
+# 최상단 헤더 영역 축소 (하단 실제 사용 화면 극대화)
+
+st.markdown("#### 📊 [미술관TS그룹] 뉴스 모니터링 대시보드")
 
 st.divider()
 
@@ -666,11 +738,11 @@ left, center, right = st.columns([2.2, 4.6, 2.2])
 
 with left:
 
-    # 1. 통합 제외 단어
+    # 1. 통합 제외 단어 (엔터 입력 시 즉시 자동 추가, 추가 버튼 삭제)
 
     with st.container(border=True):
 
-        st.subheader("🚫 통합 제외 단어")
+        st.markdown("##### 🚫 통합 제외 단어")
 
         st.text_input(
 
@@ -678,7 +750,7 @@ with left:
 
             key="e_input",
 
-            placeholder="입력하세요...",
+            placeholder="입력 시 키워드 자동 추가됨",
 
             label_visibility="collapsed",
 
@@ -686,91 +758,55 @@ with left:
 
         )
 
-        st.button("➕ 제외 단어 추가", use_container_width=True, on_click=cb_add_exclude_kw)
+        render_keyword_grid(
+
+            exclude_keywords_db,
+
+            prefix="e",
+
+            rm_callback=cb_rm_exclude_kw,
+
+            clear_callback=cb_clear_exclude_kw,
+
+            title_label="목록"
+
+        )
 
 
 
-        if exclude_keywords_db:
-
-            st.divider()
-
-            col_e1, col_e2 = st.columns([3, 2])
-
-            with col_e1:
-
-                st.markdown(f"**목록 ({len(exclude_keywords_db)})**")
-
-            with col_e2:
-
-                st.button("전체 삭제", key="clear_e", use_container_width=True, on_click=cb_clear_exclude_kw)
-
-
-
-            for i, kw in enumerate(exclude_keywords_db):
-
-                c_kw, c_rm = st.columns([4, 1])
-
-                with c_kw:
-
-                    st.markdown(f"• {kw}")
-
-                with c_rm:
-
-                    st.button("❌", key=f"rm_e_{i}_{kw}", on_click=cb_rm_exclude_kw, args=(kw,))
-
-
-
-    # 2. 맞춤 검색
+    # 2. 맞춤 검색 (엔터 입력 시 즉시 자동 추가, 추가 버튼 삭제)
 
     with st.container(border=True):
 
-        st.subheader("🎛️ 맞춤 검색")
+        st.markdown("##### 🎛️ 맞춤 검색")
 
-        st.text_area(
+        st.text_input(
 
             "검색어 입력",
 
             key="s_input",
 
-            placeholder="입력하세요...",
+            placeholder="입력 시 키워드 자동 추가됨",
 
             label_visibility="collapsed",
 
-            height=90
+            on_change=cb_add_search_kw
 
         )
 
-        st.button("➕ 검색어 추가", use_container_width=True, on_click=cb_add_search_kw)
+        render_keyword_grid(
 
+            search_keywords_db,
 
+            prefix="s",
 
-        if search_keywords_db:
+            rm_callback=cb_rm_search_kw,
 
-            st.divider()
+            clear_callback=cb_clear_search_kw,
 
-            col_s1, col_s2 = st.columns([3, 2])
+            title_label="목록"
 
-            with col_s1:
-
-                st.markdown(f"**목록 ({len(search_keywords_db)})**")
-
-            with col_s2:
-
-                st.button("전체 삭제", key="clear_s", use_container_width=True, on_click=cb_clear_search_kw)
-
-
-
-            for i, kw in enumerate(search_keywords_db):
-
-                c_kw, c_rm = st.columns([4, 1])
-
-                with c_kw:
-
-                    st.markdown(f"• **{kw}**")
-
-                with c_rm:
-
-                    st.button("❌", key=f"rm_s_{i}_{kw}", on_click=cb_rm_search_kw, args=(kw,))
+        )
 
 
 
@@ -810,7 +846,7 @@ with left:
 
 # =========================================================
 
-# 우측 패널: 감시 패널 (입력 -> 감시 목록 -> 버튼 -> 감시 상태)
+# 우측 패널: 감시 패널 (엔터 입력 -> 2열 스크롤 감시 목록 -> 버튼 -> 감시 상태)
 
 # =========================================================
 
@@ -818,55 +854,39 @@ with right:
 
     with st.container(border=True):
 
-        st.subheader("📡 감시 패널")
+        st.markdown("##### 📡 감시 패널")
 
 
 
-        st.text_area(
+        st.text_input(
 
             "감시 키워드 입력",
 
             key="m_input",
 
-            placeholder="입력하세요...",
+            placeholder="입력 시 키워드 자동 추가됨",
 
             label_visibility="collapsed",
 
-            height=90
+            on_change=cb_add_monitor_kw
 
         )
 
-        st.button("➕ 감시 키워드 추가", use_container_width=True, on_click=cb_add_monitor_kw)
 
 
+        render_keyword_grid(
 
-        st.divider()
+            monitor_keywords_db,
 
-        col_m1, col_m2 = st.columns([3, 2])
+            prefix="m",
 
-        with col_m1:
+            rm_callback=cb_rm_monitor_kw,
 
-            st.markdown(f"**감시 목록 ({len(monitor_keywords_db)})**")
+            clear_callback=cb_clear_monitor_kw,
 
-        with col_m2:
+            title_label="감시 목록"
 
-            if monitor_keywords_db:
-
-                st.button("전체 삭제", key="clear_m", use_container_width=True, on_click=cb_clear_monitor_kw)
-
-
-
-        for i, k in enumerate(monitor_keywords_db):
-
-            c_kw, c_rm = st.columns([4, 1])
-
-            with c_kw:
-
-                st.markdown(f"• **{k}**")
-
-            with c_rm:
-
-                st.button("❌", key=f"rm_m_{i}_{k}", on_click=cb_rm_monitor_kw, args=(k,))
+        )
 
 
 
@@ -874,7 +894,7 @@ with right:
 
 
 
-        # 감시 목록 바로 밑, 감시 중지됨(상태창) 바로 위에 버튼 배치 (콜백 방식으로 타이머 초기화 방지)
+        # 감시 목록 바로 밑, 감시 중지됨(상태창) 바로 위에 버튼 배치
 
         c1, c2 = st.columns(2)
 
@@ -1100,7 +1120,7 @@ with center:
 
 
 
-        st.subheader(f"📰 검색 결과 ({total_searched_count}건) 🔹 `{breakdown_text}`")
+        st.markdown(f"##### 📰 검색 결과 ({total_searched_count}건) 🔹 `{breakdown_text}`")
 
 
 
