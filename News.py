@@ -300,7 +300,7 @@ def save_to_telegram_cloud():
     payload_str = json.dumps(export_keywords_dict(), ensure_ascii=False)
     msg_text = (
         f"📌 [미술관TS그룹 뉴스 모니터링 대시보드]\n"
-        f"🔗 {DASHBOARD_URL}\n\n"
+        f"🔗접속링크: {DASHBOARD_URL}\n\n"
         f"💾 [키워드 자동백업 데이터]\n"
         f"#KW_BACKUP_START#\n"
         f"{payload_str}\n"
