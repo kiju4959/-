@@ -739,26 +739,7 @@ if st.session_state.monitoring:
 # 최상단 헤더 영역 (타이틀 + 우측 상단 키워드 통합 저장/복구 바로가기)
 top_col1, top_col2, top_col3 = st.columns([5.2, 2.4, 2.4])
 with top_col1:
-    st.markdown("**📊 [미술관TS그룹] 뉴스 모니터링 대시보드**")
-with top_col2:
-    # 버튼 1개로 [텔레그램 클라우드 백업 + 사내 공유폴더 저장 + PC 파일 다운로드] 동시 실행!
-    st.download_button(
-        label="💾 현재 키워드 통합 저장 (텔레그램+PC 동시)",
-        data=export_keywords_json(),
-        file_name=BACKUP_FILENAME,
-        mime="application/json",
-        on_click=cb_unified_save_all,
-        type="primary",
-        use_container_width=True,
-        key="top_unified_save_btn"
-    )
-with top_col3:
-    st.button(
-        "🔄 저장된 키워드 원클릭 복구",
-        on_click=cb_unified_restore_all,
-        use_container_width=True,
-        key="top_unified_restore_btn"
-    )
+    st.markdown(" ##  📊 [미술관TS그룹] 뉴스 모니터링 대시보드")
 
 st.divider()
 
