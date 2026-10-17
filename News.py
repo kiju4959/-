@@ -6,6 +6,8 @@ import requests
 import re
 import urllib3
 import difflib
+import json
+import os
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -55,7 +57,8 @@ st.markdown(
         border: 2px solid #2b6cb0 !important;
         background-color: rgba(43, 108, 176, 0.05) !important;
     }}
-    div.stButton {_gt} button {{
+    div.stButton {_gt} button,
+    div.stDownloadButton {_gt} button {{
         padding: 0.15rem 0.25rem !important;
         height: 2.0rem !important;
         min-height: 2.0rem !important;
@@ -65,7 +68,8 @@ st.markdown(
         overflow: hidden !important;
         text-overflow: ellipsis !important;
     }}
-    div.stButton {_gt} button p {{
+    div.stButton {_gt} button p,
+    div.stDownloadButton {_gt} button p {{
         font-size: 0.76rem !important;
         line-height: 1.1 !important;
         white-space: nowrap !important;
@@ -73,9 +77,80 @@ st.markdown(
         text-overflow: ellipsis !important;
         margin: 0 !important;
     }}
+    div.stDownloadButton {_gt} button {{
+        padding: 0.2rem 0.35rem !important;
+        height: 2.15rem !important;
+        min-height: 2.15rem !important;
+        border-radius: 6px !important;
+        font-weight: 700 !important;
+        white-space: nowrap !important;
+    }}
+    div.stDownloadButton {_gt} button p {{
+        font-size: 0.8rem !important;
+        font-weight: 700 !important;
+        margin: 0 !important;
+    }}
     hr {{
         margin-top: 0.25rem !important;
         margin-bottom: 0.4rem !important;
+    }}
+    /* 3대 핵심 패널(제외 / 맞춤검색 / 감시) 시인성 강화를 위한 컬러 테마 구분 */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.panel-marker-exclude) {{
+        border: 2px solid #ef4444 !important;
+        border-top: 6px solid #dc2626 !important;
+        background-color: rgba(254, 242, 242, 0.65) !important;
+        border-radius: 10px !important;
+        box-shadow: 0 2px 6px rgba(220, 38, 38, 0.08) !important;
+    }}
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.panel-marker-search) {{
+        border: 2px solid #3b82f6 !important;
+        border-top: 6px solid #2563eb !important;
+        background-color: rgba(239, 246, 255, 0.65) !important;
+        border-radius: 10px !important;
+        box-shadow: 0 2px 6px rgba(37, 99, 235, 0.08) !important;
+    }}
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.panel-marker-monitor) {{
+        border: 2px solid #10b981 !important;
+        border-top: 6px solid #059669 !important;
+        background-color: rgba(236, 253, 245, 0.65) !important;
+        border-radius: 10px !important;
+        box-shadow: 0 2px 6px rgba(5, 150, 105, 0.08) !important;
+    }}
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.panel-marker-backup) {{
+        border: 2px solid #f59e0b !important;
+        background-color: rgba(255, 251, 235, 0.85) !important;
+        border-radius: 8px !important;
+    }}
+    .panel-banner {{
+        padding: 0.38rem 0.65rem;
+        border-radius: 6px;
+        font-weight: 800;
+        font-size: 0.95rem;
+        margin-bottom: 0.45rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        letter-spacing: -0.02em;
+    }}
+    .panel-banner-exclude {{
+        background: linear-gradient(90deg, #dc2626 0%, #ef4444 100%);
+        color: #ffffff !important;
+    }}
+    .panel-banner-search {{
+        background: linear-gradient(90deg, #1d4ed8 0%, #3b82f6 100%);
+        color: #ffffff !important;
+    }}
+    .panel-banner-monitor {{
+        background: linear-gradient(90deg, #047857 0%, #10b981 100%);
+        color: #ffffff !important;
+    }}
+    .panel-badge {{
+        font-size: 0.72rem;
+        font-weight: 600;
+        padding: 0.1rem 0.45rem;
+        border-radius: 999px;
+        background-color: rgba(255, 255, 255, 0.22);
+        color: #ffffff;
     }}
     {_lt}/style{_gt}""",
     unsafe_allow_html=True
@@ -83,6 +158,13 @@ st.markdown(
 
 TELEGRAM_TOKEN = "8606963961:AAH7AkdcYuj8a5GIrbnIABSI2XLPsqDFOEg"
 TELEGRAM_CHAT_ID = "590917314"
+DASHBOARD_URL = "https://ua2mbkztvt5z76tqwgzrzr.streamlit.app/"
+
+# 사내 공유폴더(PC폴더) 백업 경로 및 파일명
+NETWORK_BACKUP_DIR = r"\\114.2.201.62\★상황실★\.직원폴더\안성우\키워드 저장"
+BACKUP_FILENAME = "keywords_backup.json"
+NETWORK_BACKUP_FILE = os.path.join(NETWORK_BACKUP_DIR, BACKUP_FILENAME)
+LOCAL_BACKUP_FILE = BACKUP_FILENAME
 
 BREAK_KEYWORDS = ["속보", "긴급", "breaking", "Breaking"]
 
@@ -168,7 +250,181 @@ def clear_saved_list(category):
     c.execute("DELETE FROM saved_lists WHERE category = ?", (category,))
     db_conn.commit()
 
-# 최초 실행 시 기본 절대 보호 키워드 시드 등록
+# ---------------------------------------------------------
+# 통합 백업 & 복구 함수 (버튼 1개로 텔레그램 + PC폴더 동시 저장)
+# ---------------------------------------------------------
+def export_keywords_dict():
+    data = {"updated_at": datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")}
+    for cat in ["exclude", "protect", "search", "monitor"]:
+        data[cat] = [{"keyword": kw, "enabled": en} for kw, en in get_saved_items(cat)]
+    return data
+
+def export_keywords_json():
+    return json.dumps(export_keywords_dict(), ensure_ascii=False, indent=2)
+
+def import_keywords_dict(data, replace=True):
+    if not isinstance(data, dict):
+        return 0
+    c = db_conn.cursor()
+    count = 0
+    for cat in ["exclude", "protect", "search", "monitor"]:
+        if cat in data and isinstance(data[cat], list):
+            if replace:
+                c.execute("DELETE FROM saved_lists WHERE category = ?", (cat,))
+            for item in data[cat]:
+                if isinstance(item, dict) and "keyword" in item:
+                    kw = str(item["keyword"]).strip()
+                    en = 1 if item.get("enabled", True) else 0
+                elif isinstance(item, (list, tuple)) and len(item) >= 1:
+                    kw = str(item[0]).strip()
+                    en = 1 if (item[1] if len(item) > 1 else True) else 0
+                else:
+                    kw = str(item).strip()
+                    en = 1
+                if kw:
+                    c.execute(
+                        "INSERT OR REPLACE INTO saved_lists (category, keyword, enabled) VALUES (?, ?, ?)",
+                        (cat, kw, en)
+                    )
+                    count += 1
+    db_conn.commit()
+    set_app_state("protect_seeded", "1")
+    return count
+
+def save_to_local_and_network():
+    """로컬 작업 폴더 및 사내 네트워크 폴더(\\114.2.201.62\...)에 동시 자동 기록"""
+    json_str = export_keywords_json()
+    saved_net = False
+    try:
+        with open(LOCAL_BACKUP_FILE, "w", encoding="utf-8") as f:
+            f.write(json_str)
+    except Exception:
+        pass
+    try:
+        os.makedirs(NETWORK_BACKUP_DIR, exist_ok=True)
+        with open(NETWORK_BACKUP_FILE, "w", encoding="utf-8") as f:
+            f.write(json_str)
+        saved_net = True
+    except Exception:
+        saved_net = False
+    return saved_net
+
+def save_to_telegram_cloud():
+    """텔레그램 채팅방 고정 메시지에 키워드 JSON 백업 저장 (대시보드 링크 유지)"""
+    payload_str = json.dumps(export_keywords_dict(), ensure_ascii=False)
+    msg_text = (
+        f"📌 [미술관TS그룹 뉴스 모니터링 대시보드]\n"
+        f"🔗 {DASHBOARD_URL}\n\n"
+        f"💾 [키워드 자동백업 데이터]\n"
+        f"#KW_BACKUP_START#\n"
+        f"{payload_str}\n"
+        f"#KW_BACKUP_END#"
+    )
+    try:
+        res = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            data={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": msg_text,
+                "disable_web_page_preview": True
+            },
+            timeout=8,
+            verify=False
+        )
+        if res.status_code == 200:
+            msg_id = res.json().get("result", {}).get("message_id")
+            if msg_id:
+                requests.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/pinChatMessage",
+                    data={
+                        "chat_id": TELEGRAM_CHAT_ID,
+                        "message_id": msg_id,
+                        "disable_notification": True
+                    },
+                    timeout=5,
+                    verify=False
+                )
+            now_str = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%m/%d %H:%M:%S")
+            set_app_state("last_backup_time", now_str)
+            return True
+    except Exception:
+        pass
+    return False
+
+def load_from_telegram_cloud():
+    """텔레그램 고정 메시지에서 키워드 백업 JSON 추출 및 복구"""
+    try:
+        res = requests.get(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getChat",
+            params={"chat_id": TELEGRAM_CHAT_ID},
+            timeout=8,
+            verify=False
+        )
+        if res.status_code == 200:
+            pinned = res.json().get("result", {}).get("pinned_message", {})
+            text = pinned.get("text", "")
+            if "#KW_BACKUP_START#" in text and "#KW_BACKUP_END#" in text:
+                json_part = text.split("#KW_BACKUP_START#")[1].split("#KW_BACKUP_END#")[0].strip()
+                data = json.loads(json_part)
+                cnt = import_keywords_dict(data, replace=True)
+                if cnt > 0:
+                    save_to_local_and_network()
+                    return True, f"텔레그램 클라우드에서 키워드 {cnt}개를 복구했습니다."
+    except Exception as e:
+        return False, f"텔레그램 복구 오류: {e}"
+    return False, "텔레그램 고정 메시지에서 백업 데이터를 찾지 못했습니다."
+
+def load_from_pc_or_local():
+    """사내 공유폴더(\\114.2.201.62\...) 또는 로컬 파일에서 키워드 복구"""
+    for path, label in [(NETWORK_BACKUP_FILE, "사내 공유폴더"), (LOCAL_BACKUP_FILE, "로컬 백업 파일")]:
+        try:
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                cnt = import_keywords_dict(data, replace=True)
+                if cnt > 0:
+                    return True, f"{label}에서 키워드 {cnt}개를 복구했습니다."
+        except Exception:
+            pass
+    return False, "저장된 백업 파일을 찾지 못했습니다."
+
+def auto_sync_all_quiet():
+    """키워드 추가/변경/삭제 시 백그라운드로 PC폴더 기록"""
+    save_to_local_and_network()
+
+def cb_unified_save_all():
+    """
+    단 1개의 [💾 현재 키워드 저장] 버튼 클릭 시 실행되는 콜백:
+    1) 텔레그램 클라우드 백업 발송 + 상단 핀 고정
+    2) 사내 공유폴더(\\114.2.201.62\...) 및 로컬 파일 자동 저장
+    3) 동시에 브라우저를 통해 PC 폴더로 백업 파일 다운로드까지 한 번에 수행!
+    """
+    tg_ok = save_to_telegram_cloud()
+    net_ok = save_to_local_and_network()
+    if tg_ok and net_ok:
+        st.session_state.backup_toast = "✅ 텔레그램 클라우드 + 사내 PC폴더 동시 저장 완료!"
+    elif tg_ok:
+        st.session_state.backup_toast = "✅ 텔레그램 저장 + PC 백업파일 다운로드 완료!"
+    else:
+        st.session_state.backup_toast = "✅ PC 백업파일 저장 완료!"
+
+def cb_unified_restore_all():
+    """[🔄 키워드 복구] 버튼 클릭 시 텔레그램 클라우드 -> 사내 공유폴더 순으로 자동 복구"""
+    ok, msg = load_from_telegram_cloud()
+    if not ok:
+        ok, msg = load_from_pc_or_local()
+    st.session_state.backup_toast = f"{'✅' if ok else '⚠️'} {msg}"
+
+# ---------------------------------------------------------
+# 앱 최초 시작 / 서버 초기화 시 자동 복구 및 기본 보호 키워드 등록
+# ---------------------------------------------------------
+total_existing_kws = sum(len(get_saved_items(c)) for c in ["exclude", "search", "monitor"])
+if total_existing_kws == 0 and get_app_state("auto_restored_once", "0") != "1":
+    ok_tg, _ = load_from_telegram_cloud()
+    if not ok_tg:
+        load_from_pc_or_local()
+    set_app_state("auto_restored_once", "1")
+
 if get_app_state("protect_seeded", "0") != "1":
     for p_kw in DEFAULT_PROTECT_KEYWORDS:
         add_to_saved_list("protect", p_kw)
@@ -242,12 +498,17 @@ defaults = {
     "s_input": "",
     "e_input": "",
     "p_input": "",
-    "m_input": ""
+    "m_input": "",
+    "backup_toast": ""
 }
 
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
+
+if st.session_state.backup_toast:
+    st.toast(st.session_state.backup_toast)
+    st.session_state.backup_toast = ""
 
 # ---------------------------------------------------------
 # 키워드 추가 / 체크(✅·⬜) / 개별삭제(✕) / 일괄제어 콜백 함수
@@ -272,35 +533,43 @@ def cb_add_search_kw():
     for kw in parse_keyword_input(st.session_state.s_input):
         add_to_saved_list("search", kw)
     st.session_state.s_input = ""
+    auto_sync_all_quiet()
 
 def cb_add_exclude_kw():
     for kw in parse_exclude_input(st.session_state.e_input):
         add_to_saved_list("exclude", kw)
     st.session_state.e_input = ""
+    auto_sync_all_quiet()
 
 def cb_add_protect_kw():
     for kw in parse_exclude_input(st.session_state.p_input):
         add_to_saved_list("protect", kw)
     st.session_state.p_input = ""
+    auto_sync_all_quiet()
 
 def cb_add_monitor_kw():
     for kw in parse_keyword_input(st.session_state.m_input):
         add_to_saved_list("monitor", kw)
     st.session_state.m_input = ""
+    auto_sync_all_quiet()
 
 def cb_toggle_kw(category, kw, current_en):
     set_keyword_enabled(category, kw, not current_en)
+    auto_sync_all_quiet()
 
 def cb_rm_kw(category, kw):
     remove_from_saved_list(category, kw)
+    auto_sync_all_quiet()
 
 def cb_set_all_kw(category, enabled):
     set_all_keywords_enabled(category, enabled)
+    auto_sync_all_quiet()
 
 def cb_clear_kw(category):
     clear_saved_list(category)
     if category == "search":
         st.session_state.run_search = False
+    auto_sync_all_quiet()
 
 def cb_start_monitoring():
     if st.session_state.m_input.strip():
@@ -314,6 +583,8 @@ def cb_start_monitoring():
     st.session_state.monitor_start_time = now_dt
     set_app_state("monitoring", "1")
     set_app_state("monitor_start_time", now_dt.strftime("%Y-%m-%d %H:%M:%S"))
+    save_to_telegram_cloud()
+    save_to_local_and_network()
 
 def cb_stop_monitoring():
     st.session_state.monitoring = False
@@ -381,7 +652,7 @@ def render_keyword_grid(items, category, title_label="목록", scroll_threshold=
                             )
 
 # ---------------------------------------------------------
-# 뉴스 RSS 수집 및 [1번 방법: 절대 보호 키워드 우선순위 예외 처리]
+# 뉴스 RSS 수집 및 [절대 보호 키워드 우선순위 예외 처리]
 # ---------------------------------------------------------
 def fetch_feed(query_str):
     url = (
@@ -401,13 +672,6 @@ def fetch_feed(query_str):
         return feedparser.FeedParserDict(entries=[])
 
 def process_news(base_keywords, excl_keywords, protect_keywords=None, limit_time=None):
-    """
-    1) 구글 RSS 검색 시에는 '-제외단어'를 URL에 직접 붙이지 않고 원문 기사를 먼저 수집합니다.
-       (구글 서버 단계에서 중요 기사가 아예 통째로 누락되는 현상 방지)
-    2) 파이썬 필터링 단계에서 제목에 '제외 단어'가 있더라도,
-       체크(✅)된 '절대 보호 키워드(protect_keywords)' 또는 '속보/긴급(BREAK_KEYWORDS)'이
-       함께 포함되어 있으면 제외하지 않고 기사를 살려냅니다(Protected Override).
-    """
     result = []
     if not base_keywords:
         return result
@@ -472,8 +736,30 @@ def process_news(base_keywords, excl_keywords, protect_keywords=None, limit_time
 if st.session_state.monitoring:
     st_autorefresh(interval=60000, limit=None, key="monitor_refresh")
 
-# 최상단 헤더 영역 초슬림화 (한 줄 텍스트 + 최소 여백)
-st.markdown("**📊 [미술관TS그룹] 뉴스 모니터링 대시보드**")
+# 최상단 헤더 영역 (타이틀 + 우측 상단 키워드 통합 저장/복구 바로가기)
+top_col1, top_col2, top_col3 = st.columns([5.2, 2.4, 2.4])
+with top_col1:
+    st.markdown("**📊 [미술관TS그룹] 뉴스 모니터링 대시보드**")
+with top_col2:
+    # 버튼 1개로 [텔레그램 클라우드 백업 + 사내 공유폴더 저장 + PC 파일 다운로드] 동시 실행!
+    st.download_button(
+        label="💾 현재 키워드 통합 저장 (텔레그램+PC 동시)",
+        data=export_keywords_json(),
+        file_name=BACKUP_FILENAME,
+        mime="application/json",
+        on_click=cb_unified_save_all,
+        type="primary",
+        use_container_width=True,
+        key="top_unified_save_btn"
+    )
+with top_col3:
+    st.button(
+        "🔄 저장된 키워드 원클릭 복구",
+        on_click=cb_unified_restore_all,
+        use_container_width=True,
+        key="top_unified_restore_btn"
+    )
+
 st.divider()
 
 now = datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
@@ -494,9 +780,15 @@ left, center, right = st.columns([2.6, 3.8, 2.6])
 # 좌측 패널: 1) 통합 제외 단어 & 절대 보호 키워드 + 2) 맞춤 검색
 # =========================================================
 with left:
-    # 1. 통합 제외 단어 + 절대 보호 키워드 (우선순위 예외 처리)
+    # 1. 통합 제외 단어 + 절대 보호 키워드 (우선순위 예외 처리) - RED 테마
     with st.container(border=True):
-        st.markdown("##### 🚫 통합 제외 단어")
+        st.markdown(
+            f'{_lt}div class="panel-marker-exclude panel-banner panel-banner-exclude"{_gt}'
+            f'{_lt}span{_gt}🚫 통합 제외 단어{_lt}/span{_gt}'
+            f'{_lt}span class="panel-badge"{_gt}필터링 패널{_lt}/span{_gt}'
+            f'{_lt}/div{_gt}',
+            unsafe_allow_html=True
+        )
         st.text_input(
             "제외 단어 입력",
             key="e_input",
@@ -517,9 +809,15 @@ with left:
             )
             render_keyword_grid(protect_items_db, category="protect", title_label="보호 목록")
 
-    # 2. 맞춤 검색
+    # 2. 맞춤 검색 - BLUE 테마
     with st.container(border=True):
-        st.markdown("##### 🎛️ 맞춤 검색")
+        st.markdown(
+            f'{_lt}div class="panel-marker-search panel-banner panel-banner-search"{_gt}'
+            f'{_lt}span{_gt}🎛️ 맞춤 검색 패널{_lt}/span{_gt}'
+            f'{_lt}span class="panel-badge"{_gt}수동 조회{_lt}/span{_gt}'
+            f'{_lt}/div{_gt}',
+            unsafe_allow_html=True
+        )
         st.text_input(
             "검색어 입력",
             key="s_input",
@@ -547,11 +845,17 @@ with left:
     search_limit = now - period_map.get(period, timedelta(days=9999)) if period != "전체" else None
 
 # =========================================================
-# 우측 패널: 감시 패널 (엔터 입력 -> 3열 균일 박스 감시 목록 -> 버튼 -> 감시 상태)
+# 우측 패널: 감시 패널 + 통합 키워드 저장/복구 버튼 상시 노출
 # =========================================================
 with right:
     with st.container(border=True):
-        st.markdown("##### 📡 감시 패널")
+        st.markdown(
+            f'{_lt}div class="panel-marker-monitor panel-banner panel-banner-monitor"{_gt}'
+            f'{_lt}span{_gt}📡 실시간 감시 패널{_lt}/span{_gt}'
+            f'{_lt}span class="panel-badge"{_gt}자동 알림{_lt}/span{_gt}'
+            f'{_lt}/div{_gt}',
+            unsafe_allow_html=True
+        )
 
         st.text_input(
             "감시 키워드 입력",
@@ -587,6 +891,50 @@ with right:
             except Exception as e:
                 st.error(f"❌ 오류: {e}")
 
+        st.divider()
+
+        # 우측 감시 패널 내부에도 눈에 확 띄는 앰버(노란) 박스로 [현재 키워드 저장] + [복구] 버튼 배치
+        with st.container(border=True):
+            st.markdown(
+                f'{_lt}div class="panel-marker-backup" style="font-size:0.8rem; font-weight:800; color:#b45309; margin-bottom:0.25rem;"{_gt}'
+                f'💾 키워드 영구 백업 · 원클릭 복구 (전 영역 통합){_lt}/div{_gt}',
+                unsafe_allow_html=True
+            )
+            b_save, b_load = st.columns(2)
+            with b_save:
+                st.download_button(
+                    label="💾 현재 키워드 통합 저장",
+                    data=export_keywords_json(),
+                    file_name=BACKUP_FILENAME,
+                    mime="application/json",
+                    on_click=cb_unified_save_all,
+                    type="primary",
+                    use_container_width=True,
+                    key="panel_unified_save_btn"
+                )
+            with b_load:
+                st.button(
+                    "🔄 저장된 키워드 복구",
+                    on_click=cb_unified_restore_all,
+                    use_container_width=True,
+                    key="panel_unified_restore_btn"
+                )
+
+        with st.expander("📂 PC 백업파일 직접 불러오기 (수동 업로드)", expanded=False):
+            st.caption(f"권장 폴더: `{NETWORK_BACKUP_DIR}`")
+            uploaded_file = st.file_uploader("keywords_backup.json 선택", type=["json"], label_visibility="collapsed")
+            if uploaded_file is not None:
+                if st.button("📥 선택한 파일로 즉시 복원", use_container_width=True, key="upload_restore_btn"):
+                    try:
+                        data = json.load(uploaded_file)
+                        cnt = import_keywords_dict(data, replace=True)
+                        save_to_telegram_cloud()
+                        save_to_local_and_network()
+                        st.session_state.backup_toast = f"✅ 파일에서 키워드 {cnt}개 복원 및 동기화 완료!"
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"파일 읽기 오류: {e}")
+
         # 감시 상태 표시
         if st.session_state.monitoring:
             current_refresh_time = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%H:%M:%S")
@@ -594,7 +942,8 @@ with right:
         else:
             st.error("🔴 **감시 중지됨**")
 
-        st.caption(f"DB 누적 전송: {get_sent_count()}건 | 🛡️ 보호 키워드 {len(enabled_protect_kws)}개 적용중")
+        last_bk = get_app_state("last_backup_time", "기록 없음")
+        st.caption(f"DB 누적 전송: {get_sent_count()}건 | 🛡️ 보호 {len(enabled_protect_kws)}개 | 💾 최근 백업: {last_bk}")
 
         for log in get_recent_logs(5):
             time_str = log[0].split(" ")[1][:5]
