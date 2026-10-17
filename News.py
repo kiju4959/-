@@ -802,7 +802,7 @@ with left:
         st.text_input(
             "검색어 입력",
             key="s_input",
-            placeholder="입력 시 키워드 자동 추가됨",
+            placeholder="검색할 단어 입력 후 Enter",
             label_visibility="collapsed",
             on_change=cb_add_search_kw
         )
@@ -841,7 +841,7 @@ with right:
         st.text_input(
             "감시 키워드 입력",
             key="m_input",
-            placeholder="입력 시 키워드 자동 추가됨",
+            placeholder="감시할 단어 입력 후 Enter",
             label_visibility="collapsed",
             on_change=cb_add_monitor_kw
         )
@@ -878,13 +878,13 @@ with right:
         with st.container(border=True):
             st.markdown(
                 f'{_lt}div class="panel-marker-backup" style="font-size:0.8rem; font-weight:800; color:#b45309; margin-bottom:0.25rem;"{_gt}'
-                f'💾 키워드 영구 백업 · 원클릭 복구 (전 영역 통합){_lt}/div{_gt}',
+                f'키워드 백업 및 복구 기능{_lt}/div{_gt}',
                 unsafe_allow_html=True
             )
             b_save, b_load = st.columns(2)
             with b_save:
                 st.download_button(
-                    label="💾 현재 키워드 통합 저장",
+                    label="키워드 저장",
                     data=export_keywords_json(),
                     file_name=BACKUP_FILENAME,
                     mime="application/json",
@@ -895,26 +895,26 @@ with right:
                 )
             with b_load:
                 st.button(
-                    "🔄 저장된 키워드 복구",
+                    "키워드 복구",
                     on_click=cb_unified_restore_all,
                     use_container_width=True,
                     key="panel_unified_restore_btn"
                 )
 
-        with st.expander("📂 PC 백업파일 직접 불러오기 (수동 업로드)", expanded=False):
-            st.caption(f"권장 폴더: `{NETWORK_BACKUP_DIR}`")
-            uploaded_file = st.file_uploader("keywords_backup.json 선택", type=["json"], label_visibility="collapsed")
-            if uploaded_file is not None:
-                if st.button("📥 선택한 파일로 즉시 복원", use_container_width=True, key="upload_restore_btn"):
-                    try:
-                        data = json.load(uploaded_file)
-                        cnt = import_keywords_dict(data, replace=True)
-                        save_to_telegram_cloud()
-                        save_to_local_and_network()
-                        st.session_state.backup_toast = f"✅ 파일에서 키워드 {cnt}개 복원 및 동기화 완료!"
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"파일 읽기 오류: {e}")
+        # with st.expander("📂 PC 백업파일 직접 불러오기 (수동 업로드)", expanded=False):
+        #     st.caption(f"권장 폴더: `{NETWORK_BACKUP_DIR}`")
+        #     uploaded_file = st.file_uploader("keywords_backup.json 선택", type=["json"], label_visibility="collapsed")
+        #     if uploaded_file is not None:
+        #         if st.button("📥 선택한 파일로 즉시 복원", use_container_width=True, key="upload_restore_btn"):
+        #             try:
+        #                 data = json.load(uploaded_file)
+        #                 cnt = import_keywords_dict(data, replace=True)
+        #                 save_to_telegram_cloud()
+        #                 save_to_local_and_network()
+        #                 st.session_state.backup_toast = f"✅ 파일에서 키워드 {cnt}개 복원 및 동기화 완료!"
+        #                 st.rerun()
+        #             except Exception as e:
+        #                 st.error(f"파일 읽기 오류: {e}")
 
         # 감시 상태 표시
         if st.session_state.monitoring:
