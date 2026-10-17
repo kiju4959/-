@@ -571,37 +571,6 @@ def cb_clear_kw(category):
         st.session_state.run_search = False
     auto_sync_all_quiet()
 
-def cb_start_monitoring():
-    if st.session_state.m_input.strip():
-        cb_add_monitor_kw()
-    if st.session_state.e_input.strip():
-        cb_add_exclude_kw()
-    if st.session_state.p_input.strip():
-        cb_add_protect_kw()
-    now_dt = datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
-    st.session_state.monitoring = True
-    st.session_state.monitor_start_time = now_dt
-    set_app_state("monitoring", "1")
-    set_app_state("monitor_start_time", now_dt.strftime("%Y-%m-%d %H:%M:%S"))
-    save_to_telegram_cloud()
-    save_to_local_and_network()
-
-def cb_stop_monitoring():
-    st.session_state.monitoring = False
-    set_app_state("monitoring", "0")
-
-def trigger_manual_search():
-    if st.session_state.s_input.strip():
-        cb_add_search_kw()
-    if st.session_state.e_input.strip():
-        cb_add_exclude_kw()
-    if st.session_state.p_input.strip():
-        cb_add_protect_kw()
-    st.session_state.active_search_keywords = get_enabled_list("search")
-    st.session_state.active_excl_keywords = get_enabled_list("exclude")
-    st.session_state.active_protect_keywords = get_enabled_list("protect")
-    st.session_state.run_search = True
-
 # ---------------------------------------------------------
 # 3열 균일 테두리 박스 ([✅ 키워드] + [✕]) 렌더링 함수
 # ---------------------------------------------------------
@@ -731,18 +700,8 @@ def process_news(base_keywords, excl_keywords, protect_keywords=None, limit_time
     return result
 
 # ---------------------------------------------------------
-# 자동 새로고침 (감시 모드 작동 중일 때 60초 간격)
+# 키워드 체크/입력 상태에 따른 검색 및 감시 자동 시작·종료 동기화
 # ---------------------------------------------------------
-if st.session_state.monitoring:
-    st_autorefresh(interval=60000, limit=None, key="monitor_refresh")
-
-# 최상단 헤더 영역 (타이틀 + 우측 상단 키워드 통합 저장/복구 바로가기)
-top_col1, top_col2, top_col3 = st.columns([5.2, 2.4, 2.4])
-with top_col1:
-    st.markdown(" ##  📊 [미술관TS그룹] 뉴스 모니터링 대시보드")
-
-st.divider()
-
 now = datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
 
 search_items_db = get_saved_items("search")
@@ -754,6 +713,36 @@ enabled_search_kws = get_enabled_list("search")
 enabled_exclude_kws = get_enabled_list("exclude")
 enabled_protect_kws = get_enabled_list("protect")
 enabled_monitor_kws = get_enabled_list("monitor")
+
+# 맞춤 검색: 활성(체크)된 검색 키워드가 있으면 즉시 검색 실행, 모두 해제/삭제되면 즉시 검색 중지
+st.session_state.run_search = bool(enabled_search_kws)
+
+# 실시간 감시: 활성(체크)된 감시 키워드가 있으면 즉시 감시 시작, 모두 해제/삭제되면 즉시 감시 종료
+if enabled_monitor_kws:
+    if not st.session_state.monitoring or st.session_state.monitor_start_time is None:
+        st.session_state.monitoring = True
+        st.session_state.monitor_start_time = now
+        set_app_state("monitoring", "1")
+        set_app_state("monitor_start_time", now.strftime("%Y-%m-%d %H:%M:%S"))
+else:
+    if st.session_state.monitoring or st.session_state.monitor_start_time is not None:
+        st.session_state.monitoring = False
+        st.session_state.monitor_start_time = None
+        set_app_state("monitoring", "0")
+        set_app_state("monitor_start_time", "")
+
+# ---------------------------------------------------------
+# 자동 새로고침 (감시 모드 작동 중일 때 60초 간격)
+# ---------------------------------------------------------
+if st.session_state.monitoring:
+    st_autorefresh(interval=60000, limit=None, key="monitor_refresh")
+
+# 최상단 헤더 영역 (타이틀 + 우측 상단 키워드 통합 저장/복구 바로가기)
+top_col1, top_col2, top_col3 = st.columns([5.2, 2.4, 2.4])
+with top_col1:
+    st.markdown(" ##  📊 [미술관TS그룹] 뉴스 모니터링 대시보드")
+
+st.divider()
 
 left, center, right = st.columns([2.6, 3.8, 2.6])
 
@@ -815,8 +804,6 @@ with left:
         with c_p2:
             max_news = st.number_input("최대 건수", min_value=10, max_value=100, value=30, step=10)
 
-        st.button("🔍 맞춤 검색 시작", type="primary", use_container_width=True, on_click=trigger_manual_search)
-
     period_map = {
         "1시간": timedelta(hours=1),
         "24시간": timedelta(hours=24),
@@ -847,30 +834,6 @@ with right:
         )
 
         render_keyword_grid(monitor_items_db, category="monitor", title_label="감시 목록")
-
-        st.divider()
-
-        c1, c2 = st.columns(2)
-        with c1:
-            st.button("🟢 시작", use_container_width=True, on_click=cb_start_monitoring)
-        with c2:
-            st.button("🔴 종료", use_container_width=True, on_click=cb_stop_monitoring)
-
-        if st.button("🔔 텔레그램 테스트 발송", use_container_width=True):
-            test_msg = "🚨 테스트 알림: [시스템 점검]\n\n📰 텔레그램 봇 연동 테스트입니다.\n\n🔗 https://news.google.com"
-            try:
-                res = requests.post(
-                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                    data={"chat_id": TELEGRAM_CHAT_ID, "text": test_msg},
-                    timeout=10,
-                    verify=False
-                )
-                if res.status_code == 200:
-                    st.toast("✅ 전송 완료")
-                else:
-                    st.error("❌ 전송 실패")
-            except Exception as e:
-                st.error(f"❌ 오류: {e}")
 
         st.divider()
 
