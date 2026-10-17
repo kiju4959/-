@@ -839,11 +839,6 @@ with right:
 
         # 우측 감시 패널 내부에도 눈에 확 띄는 앰버(노란) 박스로 [현재 키워드 저장] + [복구] 버튼 배치
         with st.container(border=True):
-            st.markdown(
-                f'{_lt}div class="panel-marker-backup" style="font-size:0.8rem; font-weight:800; color:#b45309; margin-bottom:0.25rem;"{_gt}'
-                f'키워드 백업 및 복구 기능{_lt}/div{_gt}',
-                unsafe_allow_html=True
-            )
             b_save, b_load = st.columns(2)
             with b_save:
                 st.download_button(
