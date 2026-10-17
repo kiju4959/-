@@ -473,7 +473,7 @@ if st.session_state.monitoring:
     st_autorefresh(interval=60000, limit=None, key="monitor_refresh")
 
 # 최상단 헤더 영역 초슬림화 (한 줄 텍스트 + 최소 여백)
-st.markdown(" ## 📊 [미술관TS그룹] 뉴스 모니터링 대시보드")
+st.markdown("**📊 [미술관TS그룹] 뉴스 모니터링 대시보드**")
 st.divider()
 
 now = datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
