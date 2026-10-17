@@ -251,7 +251,7 @@ def clear_saved_list(category):
     db_conn.commit()
 
 # ---------------------------------------------------------
-# 통합 백업 & 복구 함수 (버튼 1개로 텔레그램 + PC폴더 동시 저장)
+# 통합 백업 & 복구 함수 (텔레그램 클라우드 저장 및 복구)
 # ---------------------------------------------------------
 def export_keywords_dict():
     data = {"updated_at": datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S")}
@@ -292,22 +292,8 @@ def import_keywords_dict(data, replace=True):
     return count
 
 def save_to_local_and_network():
-    """로컬 작업 폴더 및 사내 네트워크 폴더(\\114.2.201.62\...)에 동시 자동 기록"""
-    json_str = export_keywords_json()
-    saved_net = False
-    try:
-        with open(LOCAL_BACKUP_FILE, "w", encoding="utf-8") as f:
-            f.write(json_str)
-    except Exception:
-        pass
-    try:
-        os.makedirs(NETWORK_BACKUP_DIR, exist_ok=True)
-        with open(NETWORK_BACKUP_FILE, "w", encoding="utf-8") as f:
-            f.write(json_str)
-        saved_net = True
-    except Exception:
-        saved_net = False
-    return saved_net
+    """로컬/네트워크 JSON 파일 저장 비활성화 (텔레그램에만 저장)"""
+    return False
 
 def save_to_telegram_cloud():
     """텔레그램 채팅방 고정 메시지에 키워드 JSON 백업 저장 (대시보드 링크 유지)"""
@@ -368,7 +354,6 @@ def load_from_telegram_cloud():
                 data = json.loads(json_part)
                 cnt = import_keywords_dict(data, replace=True)
                 if cnt > 0:
-                    save_to_local_and_network()
                     return True, f"텔레그램 클라우드에서 키워드 {cnt}개를 복구했습니다."
     except Exception as e:
         return False, f"텔레그램 복구 오류: {e}"
@@ -389,30 +374,20 @@ def load_from_pc_or_local():
     return False, "저장된 백업 파일을 찾지 못했습니다."
 
 def auto_sync_all_quiet():
-    """키워드 추가/변경/삭제 시 백그라운드로 PC폴더 기록"""
-    save_to_local_and_network()
+    """JSON 파일 저장 비활성화"""
+    pass
 
 def cb_unified_save_all():
-    """
-    단 1개의 [💾 현재 키워드 저장] 버튼 클릭 시 실행되는 콜백:
-    1) 텔레그램 클라우드 백업 발송 + 상단 핀 고정
-    2) 사내 공유폴더(\\114.2.201.62\...) 및 로컬 파일 자동 저장
-    3) 동시에 브라우저를 통해 PC 폴더로 백업 파일 다운로드까지 한 번에 수행!
-    """
+    """[키워드 저장] 버튼 클릭 시 텔레그램 클라우드에 백업 발송 + 상단 핀 고정"""
     tg_ok = save_to_telegram_cloud()
-    net_ok = save_to_local_and_network()
-    if tg_ok and net_ok:
-        st.session_state.backup_toast = "✅ 텔레그램 클라우드 + 사내 PC폴더 동시 저장 완료!"
-    elif tg_ok:
-        st.session_state.backup_toast = "✅ 텔레그램 저장 + PC 백업파일 다운로드 완료!"
+    if tg_ok:
+        st.session_state.backup_toast = "✅ 텔레그램 저장 완료!"
     else:
-        st.session_state.backup_toast = "✅ PC 백업파일 저장 완료!"
+        st.session_state.backup_toast = "⚠️ 텔레그램 저장 실패"
 
 def cb_unified_restore_all():
-    """[🔄 키워드 복구] 버튼 클릭 시 텔레그램 클라우드 -> 사내 공유폴더 순으로 자동 복구"""
+    """[키워드 복구] 버튼 클릭 시 텔레그램 클라우드에서 복구"""
     ok, msg = load_from_telegram_cloud()
-    if not ok:
-        ok, msg = load_from_pc_or_local()
     st.session_state.backup_toast = f"{'✅' if ok else '⚠️'} {msg}"
 
 # ---------------------------------------------------------
@@ -420,9 +395,7 @@ def cb_unified_restore_all():
 # ---------------------------------------------------------
 total_existing_kws = sum(len(get_saved_items(c)) for c in ["exclude", "search", "monitor"])
 if total_existing_kws == 0 and get_app_state("auto_restored_once", "0") != "1":
-    ok_tg, _ = load_from_telegram_cloud()
-    if not ok_tg:
-        load_from_pc_or_local()
+    load_from_telegram_cloud()
     set_app_state("auto_restored_once", "1")
 
 if get_app_state("protect_seeded", "0") != "1":
@@ -812,9 +785,6 @@ with left:
     }
     search_limit = now - period_map.get(period, timedelta(days=9999)) if period != "전체" else None
 
-# =========================================================
-# 우측 패널: 감시 패널 + 통합 키워드 저장/복구 버튼 상시 노출
-# =========================================================
 with right:
     with st.container(border=True):
         st.markdown(
@@ -837,15 +807,11 @@ with right:
 
         st.divider()
 
-        # 우측 감시 패널 내부에도 눈에 확 띄는 앰버(노란) 박스로 [현재 키워드 저장] + [복구] 버튼 배치
         with st.container(border=True):
             b_save, b_load = st.columns(2)
             with b_save:
-                st.download_button(
-                    label="키워드 저장",
-                    data=export_keywords_json(),
-                    file_name=BACKUP_FILENAME,
-                    mime="application/json",
+                st.button(
+                    "키워드 저장",
                     on_click=cb_unified_save_all,
                     type="primary",
                     use_container_width=True,
